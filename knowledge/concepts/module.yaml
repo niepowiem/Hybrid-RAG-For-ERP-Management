@@ -1,0 +1,10 @@
+- id: "module"
+  gen: "test"
+  da: "ga"
+  hash:
+
+- id: "module2"
+  gen: "test"
+  da: "ga"
+  hash:
+
