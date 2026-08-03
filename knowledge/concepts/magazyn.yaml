@@ -1,0 +1,38 @@
+- id: concept.dokument-magazynowy
+  module: magazyn
+  title: Dokument magazynowy PZ, WZ, MM
+  aliases: [pz, wz, mm, przyjęcie, wydanie, przesunięcie, papier]
+  body: |
+    Każdy ruch towaru odbywa się przez dokument magazynowy. Są trzy typy:
+    PZ przyjmuje towar z zewnątrz i zwiększa stan, WZ wydaje towar na zewnątrz
+    i zmniejsza stan, MM przesuwa towar między dwoma różnymi magazynami.
+
+    Cykl życia dokumentu: Szkic, potem Zatwierdzony. Szkic można dowolnie
+    edytować i nie wpływa on na stany. Zatwierdzenie jest nieodwracalne —
+    dokument staje się tylko do odczytu, a jego pozycje zaczynają liczyć się
+    do stanu magazynowego. Pomyłki koryguje się nowym dokumentem
+    przeciwnego ruchu.
+
+- id: concept.stan-magazynowy
+  module: magazyn
+  title: Stan magazynowy
+  aliases: [stany, ilość na magazynie, zapas, minimum, stan minimalny]
+  body: |
+    Stan magazynowy to ilość produktu na konkretnym magazynie. Nie wpisuje się
+    go ręcznie — system wylicza go z zatwierdzonych dokumentów: PZ dodaje,
+    WZ odejmuje, MM przesuwa. Dzięki temu stan zawsze zgadza się z historią.
+
+    Każdy produkt ma zdefiniowany stan minimalny. Gdy ilość spadnie poniżej
+    minimum, w widoku Stany magazynowe liczba jest podświetlona na czerwono.
+
+- id: concept.role-magazynowe
+  module: magazyn
+  title: Role użytkowników w module magazynowym
+  aliases: [magazynier, kierownik, uprawnienia, kto może zatwierdzać]
+  body: |
+    W module magazynowym są dwie role. Magazynier tworzy i edytuje dokumenty
+    oraz zatwierdza PZ i WZ. Kierownik ma pełne uprawnienia magazyniera,
+    a dodatkowo jako jedyny zatwierdza przesunięcia międzymagazynowe (MM).
+
+    Magazynier może przygotować szkic MM i przekazać go kierownikowi.
+    W prototypie rolę przełącza się w panelu bocznym w polu Kontekst uprawnień.

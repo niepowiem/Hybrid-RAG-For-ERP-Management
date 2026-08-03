@@ -1,0 +1,126 @@
+- id: proc.magazyn.przyjecie-pz
+  title: Przyjęcie towaru na magazyn dokumentem PZ
+  module: magazyn
+  summary: Jak przyjąć towar od dostawcy na wybrany magazyn i zatwierdzić dokument.
+  query:
+    - jak przyjąć towar
+    - towar przyjechał co teraz
+    - jak zrobić pz
+    - jak zwiększyć stan magazynowy
+    - przyjęcie zewnętrzne
+  roles:
+    - magazynier
+    - kierownik
+  steps:
+    - text: Przejdź do Dokumenty w menu bocznym
+      anchor: nav.documents
+    - text: Kliknij Nowy dokument
+      anchor: btn.document-new
+    - text: W polu Typ dokumentu wybierz PZ
+      anchor: field.document-type
+      action: { kind: select, label: "PZ" }
+      note: Po zapisaniu typu nie da się zmienić
+    - text: W polu Dostawca wybierz kontrahenta, od którego przyjmujesz towar
+      anchor: field.counterparty
+      action: { kind: select, label: "Stalmex" }
+    - text: W sekcji Magazyny wybierz Magazyn docelowy
+      anchor: field.warehouse-to
+      action: { kind: select, label: "MAG-GL" }
+    - text: Przejdź na zakładkę Pozycje
+      anchor: tab.lines
+    - text: Kliknij Dodaj pozycję
+      anchor: btn.line-add
+    - text: Wybierz produkt z listy
+      anchor: field.line-product
+      action: { kind: select, label: "SR-M8-100" }
+      note: Cena podpowiada się automatycznie z kartoteki produktu
+    - text: Wpisz przyjmowaną ilość
+      anchor: field.line-quantity
+      action: { kind: fill, value: "100" }
+    - text: Kliknij Zatwierdź dokument
+      anchor: btn.document-confirm
+  verification: Dokument dostaje status Zatwierdzony, a stan produktu rośnie
+  common_errors: [ERR-1003]
+
+- id: proc.magazyn.wydanie-wz
+  title: Wydanie towaru z magazynu dokumentem WZ
+  module: magazyn
+  summary: Jak wydać towar odbiorcy na zewnątrz i zmniejszyć stan magazynowy.
+  query:
+    - jak wydać towar
+    - jak zrobić wz
+    - jak zdjąć coś ze stanu
+    - klient odbiera towar
+    - wydanie zewnętrzne
+  roles:
+    - magazynier
+    - kierownik
+  preconditions:
+    - Na magazynie źródłowym musi być wystarczająca ilość każdego produktu
+  steps:
+    - text: Przejdź do Dokumenty i kliknij Nowy dokument
+      anchor: btn.document-new
+    - text: W polu Typ dokumentu wybierz WZ
+      anchor: field.document-type
+    - text: W polu Odbiorca wybierz kontrahenta
+      anchor: field.counterparty
+    - text: W sekcji Magazyny wybierz Magazyn źródłowy
+      anchor: field.warehouse-from
+    - text: Na zakładce Pozycje dodaj produkty i ilości
+      anchor: tab.lines
+    - text: Kliknij Zatwierdź dokument
+      anchor: btn.document-confirm
+  verification: Stan produktu w widoku Stany magazynowe maleje o wydaną ilość
+  common_errors: [ERR-1004, ERR-1003]
+
+- id: proc.magazyn.przesuniecie-mm
+  title: Przesunięcie towaru między magazynami dokumentem MM
+  module: magazyn
+  summary: Jak przenieść towar z jednego magazynu na drugi. Magazyny muszą być różne, a zatwierdzić może tylko kierownik.
+  query:
+    - jak przesunąć towar między magazynami
+    - jak zrobić mm
+    - przesunięcie na produkcję
+    - transfer między magazynami
+  roles: [magazynier, kierownik]
+  preconditions:
+    - Magazyn źródłowy i docelowy muszą być różne
+    - Zatwierdzić MM może wyłącznie kierownik
+  steps:
+    - text: Przejdź do Dokumenty i kliknij Nowy dokument
+      anchor: btn.document-new
+    - text: W polu Typ dokumentu wybierz MM
+      anchor: field.document-type
+    - text: W sekcji Magazyny wybierz Magazyn źródłowy
+      anchor: field.warehouse-from
+    - text: Wybierz inny Magazyn docelowy
+      anchor: field.warehouse-to
+      note: Pole Kontrahent jest przy MM nieaktywne i to jest normalne
+    - text: Na zakładce Pozycje dodaj produkty i kliknij Zapisz szkic
+      anchor: btn.document-save
+    - text: Jako kierownik otwórz szkic i kliknij Zatwierdź dokument
+      anchor: btn.document-confirm
+      note: Rolę zmienisz w panelu bocznym w polu Kontekst uprawnień
+  verification: Stan maleje na magazynie źródłowym i rośnie na docelowym
+  common_errors: [ERR-1005, ERR-3001]
+
+- id: proc.magazyn.sprawdzenie-stanu
+  title: Sprawdzenie stanu magazynowego produktu
+  module: magazyn
+  summary: Gdzie zobaczyć aktualne ilości produktów i co oznacza czerwone podświetlenie.
+  query:
+    - gdzie widzę stany
+    - ile mam towaru
+    - jak sprawdzić stan produktu
+    - dlaczego ilość jest na czerwono
+    - co znaczy czerwona liczba
+  roles: [magazynier, kierownik]
+  steps:
+    - text: Przejdź do Stany magazynowe w menu bocznym
+      anchor: nav.stock
+    - text: Wpisz indeks lub nazwę produktu w pole wyszukiwania
+      anchor: field.filter-search
+    - text: Aby zobaczyć tylko braki, zaznacz filtr tylko poniżej minimum
+      anchor: field.filter-low
+      note: Ilość na czerwono oznacza stan poniżej minimum produktu
+  verification: Tabela pokazuje ilość per magazyn wraz z jednostką i minimum

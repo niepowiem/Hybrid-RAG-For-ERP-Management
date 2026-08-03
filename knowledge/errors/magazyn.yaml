@@ -1,0 +1,48 @@
+- id: ERR-1003
+  module: magazyn
+  query: Nie można zatwierdzić dokumentu bez pozycji.
+  causes:
+    - Dokument nie ma żadnej pozycji z produktem i ilością
+  solutions:
+    - solution:
+        - Przejdź na zakładkę Pozycje i kliknij Dodaj pozycję
+        - Wybierz produkt, podaj ilość, potem zatwierdź ponownie
+      ref:
+        - proc.magazyn.przyjecie-pz
+
+- id: ERR-1004
+  module: magazyn
+  query: Na magazynie źródłowym nie ma wystarczającej ilości produktu, aby zatwierdzić ten dokument.
+  causes:
+    - Ilość na dokumencie przekracza aktualny stan magazynowy
+    - Stan zmienił się od utworzenia dokumentu, bo inny dokument wydał ten produkt wcześniej
+  solutions:
+    - solution:
+        - Sprawdź aktualny stan w widoku Stany magazynowe
+        - Zmniejsz ilość na pozycji albo najpierw przyjmij brakującą ilość dokumentem PZ
+      ref:
+        - proc.magazyn.sprawdzenie-stanu
+        - proc.magazyn.przyjecie-pz
+
+- id: ERR-1005
+  module: magazyn
+  query: Przesunięcie MM musi mieć różne magazyny, źródłowy i docelowy.
+  causes:
+    - Wybrano ten sam magazyn w polu źródłowym i docelowym
+  solutions:
+    - solution:
+        - Zmień jeden z magazynów tak, aby były różne
+      ref:
+        - proc.magazyn.przesuniecie-mm
+
+- id: ERR-3001
+  module: magazyn
+  query: Tylko kierownik może zatwierdzać przesunięcia międzymagazynowe (MM).
+  causes:
+    - Zalogowana rola to magazynier, a zatwierdzanie MM wymaga roli kierownik
+  solutions:
+    - solution:
+      - Poproś kierownika o zatwierdzenie dokumentu
+      - Dokument pozostaje w statusie Szkic, nic nie przepadło
+      ref:
+        - proc.magazyn.przesuniecie-mm

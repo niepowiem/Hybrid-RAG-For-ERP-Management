@@ -4,3 +4,5 @@ python-dotenv
 pyyaml
 pydantic
 uvicorn
+langchain[community]
+neo4j[graphrag]

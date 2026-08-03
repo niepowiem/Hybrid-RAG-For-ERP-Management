@@ -14,7 +14,7 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 LLM_MODEL = os.getenv("LLM_MODEL")
 
 EMBED_MODEL = os.getenv("EMBED_MODEL")
-EMBED_MODEL_DIM = os.getenv("EMBED_MODEL_DIM")
+EMBED_MODEL_DIM = int(os.getenv("EMBED_MODEL_DIM", "1024"))
 
 class ChatModel:
     __slots__ = ("model", "system", "memory", "messages")
@@ -167,3 +167,4 @@ class EmbedModel:
         response.raise_for_status()
 
         return response.json()["embeddings"]
+
