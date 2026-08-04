@@ -1,3 +1,4 @@
+import json
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -100,7 +101,7 @@ class KnowledgeGraph:
 
 knowledge_graph = KnowledgeGraph()
 
-# Chaty czasami źle wysyłąją zrób parsowani w narzędziach by naprawić elementy
+# TODO: Do @tools dodaj funkcje poprawiające zmienne, ponieważ czasami niektóre modele źle przekazują struktury
 
 @tool
 def merge(node_id: str, node_class:str, properties: dict[str, Any] | None = None) -> str:
@@ -110,9 +111,26 @@ def merge(node_id: str, node_class:str, properties: dict[str, Any] | None = None
 
     :param node_id: A unique node id it can't appear more than once
     :param node_class: class of an entity, it can appear multiple times
-    :param properties: dictionary of additional properties for the entity
+    :param properties: dictionary of additional properties, e.g. {"opis": "Przyjęcie towaru", "skutek": "zwiększa stan"} IMPORTANT: pass this as a JSON object/dictionary, NOT as a string.
     :return: confirmation or error message
     """
+
+    if isinstance(properties, str):
+        try:
+            properties = json.loads(properties)
+
+        except json.JSONDecodeError as e:
+            return (
+                f"BŁĄD: 'properties' musi być prawidłowym obiektem JSON (słownikiem), "
+                f"otrzymano nieprawidłowy string: {properties!r}. Błąd parsowania: {e}. "
+                f"Popraw i wywołaj narzędzie ponownie z poprawnym properties jako obiekt."
+            )
+
+        if not isinstance(properties, dict):
+            return (
+                f"BŁĄD: 'properties' po sparsowaniu nie jest słownikiem (jest typu {type(properties).__name__}). "
+                f"Podaj properties jako obiekt JSON, np. {{\"opis\": \"...\"}}."
+            )
 
     return knowledge_graph.merge(node_id, node_class, properties)
 
