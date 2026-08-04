@@ -73,11 +73,128 @@ class Concept(BaseModel):
 
 KB_DATATYPE = Procedure | Error | Concept
 
-def prepare_for_embedding():
-    pass
+def prepare_for_vector_embedding(document: KB_DATATYPE) -> str:
+    output: list[str] = []
 
-def prepare_for_lexical_search():
-    pass
+    if isinstance(document, Procedure):
+        output = [
+            document.title,
+            document.summary,
+            *document.query,
+            *document.preconditions
+        ]
 
-def prepare_for_prompt():
-    pass
+    elif isinstance(document, Error):
+        output = [
+            document.id,
+            document.query,
+            *document.causes,
+        ]
+
+    elif isinstance(document, Concept):
+        output = [
+            document.title,
+            *document.aliases,
+            document.body
+        ]
+
+    else:
+        raise ValueError(f"document type: ({type(document)}) is not of KB_DATATYPE")
+
+    return '\n'.join(output)
+
+def prepare_for_lexical_search(document: KB_DATATYPE) -> str:
+    output: list[str] = []
+
+    if isinstance(document, Procedure):
+        output = [
+            document.id,
+            document.title,
+            document.module,
+            document.summary,
+            *document.query,
+            *document.preconditions,
+            *document.roles,
+            *[step.text for step in document.steps],
+            *document.common_errors,
+        ]
+
+        if document.verification:
+            output.append(document.verification)
+
+    elif isinstance(document, Error):
+        output = [
+            document.id,
+            document.module,
+            document.query,
+            *document.causes,
+            *[error_solution.solution for error_solution in document.solutions],
+            *[error_solution.ref for error_solution in document.solutions]
+        ]
+
+    elif isinstance(document, Concept):
+        output = [
+            document.id,
+            document.module,
+            document.title,
+            *document.aliases,
+            document.body
+        ]
+
+    else:
+        raise ValueError(f"document type: ({type(document)}) is not of KB_DATATYPE")
+
+    return '\n'.join(output)
+
+def prepare_for_prompt(document: KB_DATATYPE) -> str:
+    output: list[str] = []
+
+    if isinstance(document, Procedure):
+        output = [
+            f'[{document.id}] ({document.title})',
+            document.summary
+        ]
+
+        if document.roles:
+            output.append(f'Role: ' + ', '.join(document.roles))
+
+        if document.preconditions:
+            output.append("Warunki wstępne:\n- " + "\n- ".join(document.preconditions))
+
+        # Kroki
+        output.append(f'Kroki:')
+        for i, step in enumerate(document.steps, 1):
+            lines = [f'{i}. {step.text}']
+            if step.note:
+                lines.append(f'    ({step.note})')
+
+            output.append('\n'.join(lines))
+
+        if document.verification:
+            output.append(f"Weryfikacja: {document.verification}")
+
+    elif isinstance(document, Error):
+        output = [
+            f'[{document.id}] ({document.query})',
+            "Przyczyny:\n- " + "\n- ".join(document.causes),
+        ]
+
+        if document.solutions:
+            for i, solution in enumerate(document.solutions, 1):
+                output.append(f'Rozwiązanie #{i}:')
+
+                output.append('\n'.join(solution.solution))
+
+                if solution.ref:
+                    output.append('\n'.join(solution.ref))
+
+    elif isinstance(document, Concept):
+        output = [
+            f'[{document.id}] ({document.title})',
+            document.body
+        ]
+
+    else:
+        raise ValueError(f"document type: ({type(document)}) is not of KB_DATATYPE")
+
+    return '\n'.join(output)

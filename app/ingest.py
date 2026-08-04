@@ -2,7 +2,7 @@ import yaml
 import sys
 from pathlib import Path
 from pydantic import ValidationError
-from schema import Procedure, Error, Concept, KB_DATATYPE
+from app.schema import Procedure, Error, Concept, KB_DATATYPE
 
 knowledge_directory = Path("../knowledge")
 
@@ -27,7 +27,7 @@ def load_knowledge() -> list[KB_DATATYPE]:
                     documents.append(model.model_validate(entry))
 
                 except ValidationError as err:
-                    name= entry.get("id", "?") if isinstance(entry, dict) else "?"
+                    name = entry.get("id", "?") if isinstance(entry, dict) else "?"
                     print(f"\nErr. in {file.name}, doc. {name}:\n{err}", file=sys.stderr)
                     errors += 1
     if errors:
@@ -35,8 +35,21 @@ def load_knowledge() -> list[KB_DATATYPE]:
 
     return documents
 
-def check_for_duplicates():
-    pass
+def check_for_duplicates(documents: list[KB_DATATYPE]):
+    duplicates: list[KB_DATATYPE] = []
+    ids: list[str] = []
+
+    for document in documents:
+        if document.id in ids:
+            duplicates.append(document)
+
+        else:
+            ids.append(document.id)
+
+    if duplicates:
+        for document in duplicates:
+            print(f"Duplicate id: {document.id}, {type(document)}")
 
 if __name__ == "__main__":
-    pass
+    data_documents = load_knowledge()
+    check_for_duplicates(data_documents)
