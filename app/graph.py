@@ -2,13 +2,13 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.core import GRAPH_DB_URL, GRAPH_DB_PASSWORD
+from app.core import GRAPH_DB_URL, GRAPH_DB_PASSWORD, ChatModel
 from langchain.tools import tool
 
 from neo4j import GraphDatabase, Driver
 
-def initialize_graph_driver() -> Driver:
-    return GraphDatabase.driver(GRAPH_DB_URL, auth=("neo4j", GRAPH_DB_PASSWORD))
+graph_driver: Driver | None = None
+knowledge_graph: KnowledgeGraph | None = None
 
 @dataclass
 class GraphClass:
@@ -99,8 +99,6 @@ class KnowledgeGraph:
         self.nodes.clear()
         self.relations.clear()
 
-knowledge_graph = KnowledgeGraph()
-
 # TODO: Do @tools dodaj funkcje poprawiające zmienne, ponieważ czasami niektóre modele źle przekazują struktury
 
 @tool
@@ -157,5 +155,23 @@ def status() -> str:
 
     return knowledge_graph.context()
 
-if __name__ == "__main__":
-    pass
+llm_tools = (merge, relationship, status)
+
+def build_graph_with_ollama(model: str, system: str, documents: str):
+    knowledge_graph.clear()
+
+    llm = ChatModel(model=model,
+                    system=system,
+                    tools=llm_tools)
+
+    llm.pretty(documents, max_tool_iterations=1024)
+
+def initialize_graph_driver():
+    global graph_driver
+
+    graph_driver = GraphDatabase.driver(GRAPH_DB_URL, auth=("neo4j", GRAPH_DB_PASSWORD))
+
+def initialize_knowledge_graph():
+    global knowledge_graph
+
+    knowledge_graph = KnowledgeGraph()
