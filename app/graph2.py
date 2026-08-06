@@ -1,29 +1,21 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+from neo4j import Driver, GraphDatabase
+from neo4j.exceptions import ServiceUnavailable, AuthError
 from pydantic import BaseModel, Field, ValidationError
+import re
+
+from app.core import GRAPH_DB_URL, GRAPH_DB_PASSWORD, ChatModel
+
+graph_driver: Driver | None = None
+knowledge_graph: KnowledgeGraph | None = None
 
 class GraphClassSchema(BaseModel):
     # Key to nazwa parametru, a value to defaultowy parametr
     # w wypadku gdyby model go nie podał
 
     parameters: dict[str, Any] = Field(min_length=1)
-
-    def add(self, parameter: str, default: Any) -> bool:
-        """
-        Dodaje parametr do schematu wraz z jego wartością domyślną.
-        Zwraca False, jeśli parametr już istnieje (nic nie zmienia)
-
-        :param parameter:
-        :param default:
-        :return:
-        """
-
-        if parameter in self.parameters:
-            return False
-
-        self.parameters[parameter] = default
-        return True
 
     def describe(self) -> str:
         return ', '.join([f"'{k}': {type(v).__name__} (default={v})" for k, v in self.parameters.items()])
@@ -36,6 +28,10 @@ class GraphNode:
 
 class KnowledgeGraph:
     __slots__ = ("nodes", "relations", "classes")
+    IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,63}$")
+    VALID_TYPES = (str, int, float, bool)
+    VALID_NAMES = ('str', 'int', 'float', 'bool',
+                   'list[str]', 'list[int]', 'list[float]', 'list[bool]')
 
     def __init__(self):
         self.nodes: dict[str, GraphNode] = { }
@@ -57,6 +53,10 @@ class KnowledgeGraph:
                     f"Nie można jej dodać drugi raz."
                     f"Aby sprawdzić wszystkie dostępne relacje użyj 'read_relationships'")
 
+        # Sprawdzamy czy nazwa może być
+        if mess := self._validate_name(relation):
+            return mess
+
         self.relations.append(relation)
         return (f"INFO: Zamieniono znaki relacji na wielkie.\n"
                 f"OK: Dodano relację '{relation}' do zbioru dostępnych relacji."
@@ -76,6 +76,14 @@ class KnowledgeGraph:
             return (f"BŁĄD: Klasa '{class_name}' już istnieje: {self.read_class(class_name)}."
                     f"Aby sprawdzić wszystkie dostępne klasy użyj komendy: 'read_classes'")
 
+        # Sprawdzamy czy nazwa może być
+        if mess := self._validate_name(class_name):
+            return mess
+
+        # Sprawdzamy czy typ się zgadza
+        if mess := self._validate_initialize_parameters_type(parameters):
+            return mess
+
         try:
             new_class = GraphClassSchema(parameters=parameters)
 
@@ -86,7 +94,7 @@ class KnowledgeGraph:
         self.classes[class_name] = new_class
         return f"OK: Zdefiniowano klasę: {self.read_class(class_name)}. Możesz ją od teraz przypisywać do node"
 
-    def _validate_properties(self, class_name: str, parameters: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
+    def _validate_parameters(self, class_name: str, parameters: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
         """
         Przed każdą próbą dodania klasy do noda sprawdzamy, czy obecne parametry
         zgadzają się z podawaną klasą
@@ -127,9 +135,9 @@ class KnowledgeGraph:
             error = True
 
         # Sprawdzamy, czy użyto tych samych typów parametrów
-        type_mess = self.__validate_parameter_types(shared_parameters=class_keys & given_params,
-                                                    class_parameters=class_in_question.parameters,
-                                                    parameters=parameters)
+        type_mess = self.__validate_parameter_class_types(shared_parameters=class_keys & given_params,
+                                                          class_parameters=class_in_question.parameters,
+                                                          parameters=parameters)
         if type_mess:
             error_messages.append(type_mess)
             error = True
@@ -147,8 +155,7 @@ class KnowledgeGraph:
 
         return ''
 
-    @staticmethod
-    def __validate_parameter_types(shared_parameters: set[str], class_parameters: dict[str, Any], parameters: dict[str, Any]) -> str:
+    def __validate_parameter_class_types(self, shared_parameters: set[str], class_parameters: dict[str, Any], parameters: dict[str, Any]) -> str:
         """
         Sprawdzamy, czy typy podanych wartości są zgodne z przyjmowanymi
 
@@ -158,11 +165,14 @@ class KnowledgeGraph:
         :return:
         """
 
-        different_parameter_type = {
-            k: (type(class_parameters[k]).__name__, type(parameters[k]).__name__)
-            for k in shared_parameters
-            if type(class_parameters[k]) != type(parameters[k])
-        }
+        different_parameter_type: dict[str, tuple[str, str]] = { }
+
+        for key in shared_parameters:
+            should_be_parameter_type = self.__deep_type(class_parameters[key])
+            new_parameter_type = self.__deep_type(parameters[key])
+
+            if should_be_parameter_type != new_parameter_type:
+                different_parameter_type[key] = (should_be_parameter_type, new_parameter_type)
 
         if different_parameter_type:
             return (f"BŁĄD: Typu parametrów różnią się od typów klasy: "
@@ -184,17 +194,15 @@ class KnowledgeGraph:
         # Sprawdzamy nadprogramowe parametry ale nie względem node, ponieważ jeżeli w takcie trwania programu
         # dodano nowe parametry do klasy, nie pojawią się one w nodzie, dlatego gdybyśmy sprawdzali względem node
         # otrzymalibyśmy błąd
-        exc_mess = self.__validate_parameter_excessive_amount(class_name=node_in_question.c_name,
-                                                              class_keys=class_keys,
-                                                              given_parameters=given_parameters)
-        if exc_mess:
+        if exc_mess := self.__validate_parameter_excessive_amount(class_name=node_in_question.c_name,
+                                                                  class_keys=class_keys,
+                                                                  given_parameters=given_parameters):
             error_messages.append(exc_mess)
 
         # Sprawdzamy, czy nie podajemy złych typów
-        type_mess = self.__validate_parameter_types(shared_parameters=class_keys & given_parameters,
-                                                    class_parameters=node_in_question.c_parameters,
-                                                    parameters=parameters)
-        if type_mess:
+        if type_mess := self.__validate_parameter_class_types(shared_parameters=class_keys & given_parameters,
+                                                              class_parameters=self.classes[node_in_question.c_name].parameters,
+                                                              parameters=parameters):
             error_messages.append(type_mess)
 
         if error_messages:
@@ -235,15 +243,54 @@ class KnowledgeGraph:
 
         # Dodajemy parametry do klasy
         new_parameters = {k: v for k, v in parameters.items() if k not in shared_parameters}
+
+        # Walidujemy nazwy i typy parametrów
+        if mess_type := self._validate_initialize_parameters_type(new_parameters):
+            return mess_type
+
         class_in_question.parameters |= new_parameters
 
         return f"{info_message}\nOK: Dodano parametry do klasy '{class_name}'. Aktualne parametry to: {self.read_class(class_name)}"
 
-    # TODO
-    def merge(self):
-        pass
+    def merge(self, node_name: str, class_name: str, parameters: dict[str, Any]) -> str:
+        """
+        Tworzymy nowy node
+
+        :param node_name: nazwa nowego node
+        :param class_name: klasa noda
+        :param parameters: parametry klasy noda
+        :return:
+        """
+
+        # Sprawdzamy, czy nazwa może być
+        if mess := self._validate_name(class_name):
+            return mess
+
+        error_messages: list[str] = []
+        node_already_exists: bool = node_name in self.nodes.keys()
+
+        # Sprawdzamy, czy node istnieje, jeżeli tak, to błąd
+        if node_already_exists:
+            error_messages.append(f"ERROR: Node '{node_name}' już istnieje! Aby sprawdzić wszystkie istniejące nody, użyj 'read_node_names'")
+
+        # Walidujemy klasę czy wszystko się zgadza
+        parameters, message = self._validate_parameters(class_name=class_name, parameters=parameters)
+        error_messages.append(message)
+
+        # Jeżeli otrzymaliśmy błąd z validate to parameters jest None,
+        # jeżeli jest none i mamy error messages to zwracamy
+        if node_already_exists or parameters is None:
+            return '\n'.join(error_messages)
+
+        self.nodes[node_name] = GraphNode(c_name=class_name, c_parameters=parameters)
+
+        return (f"OK: Pomyślnie utworzono node '{node_name}'."
+                f"Aby zobaczyć wszystkie utworzone node użyj 'read_node_names'.\n"
+                f"{'\n'.join(error_messages)}")
 
     def relationship(self, from_node: str, to_nodes: list[str], relation: str) -> str:
+        relation = relation.upper()
+
         set_to_nodes: set[str] = set(to_nodes)
 
         error_messages: list[str] = []
@@ -298,9 +345,39 @@ class KnowledgeGraph:
             return f"INFO: Dostępne relacje:\n{relations}"
         return f"BŁĄD: Nie dodano jeszcze żadnej relacji! Aby dodać relację skożystaj z 'define_relation'"
 
-    # TODO
-    def read_node_relations(self, node_name: str, relation: str) -> str:
-        pass
+    def read_node_relations(self, node_name: str, relation: str | None = None) -> str:
+        """
+        Wypisuje relacje danego noda.
+        Jeżeli podamy relation, wypisuje tylko tą relacje i obiekty dla tego noda
+        Jeżeli nie podamy relacji, wypisujęmy wszystkie relacje i obiekty dla tego noda
+
+        :param node_name: nazwa, interesującego nas noda
+        :param relation: relacja, którą chcemy sprawdzić
+        :return:
+        """
+
+        node_in_question = self.nodes.get(node_name, None)
+        if node_in_question is None:
+            return self.err_mess_node_doesnt_exist(node_name)
+
+        if len(node_in_question.n_relations) == 0:
+            return (f"INFO: Node '{node_name}' nie posiada jeszcze żadnej relacji."
+                    f"Aby dodać relację użyj 'relationships'")
+
+        # Jeżeli nie podano relacji wypisujem wszystkie relacje
+        if relation is None:
+            relations = [f" - '{k}' -> ({', '.join(v)})" for k,v in node_in_question.n_relations.items()]
+            return f"OK: Aktualnie, wszystkie relacje node '{node_name}' to:\n{'\n'.join(relations)}"
+
+        # Jeżeli podano wypisujemy tylko jedną (wcześniej ją normalizując)
+        relation = relation.upper()
+        if node_in_question.n_relations.get(relation, None) is None:
+            return (f"BŁĄD: Node '{node_name}' nie posiada relacji '{relation}'."
+                    f"Upewnij się, czy na pewno wpisałeś poprawnie lub użyj"
+                    f"'read_node_relation' nie podając parametru relation, aby zobaczyć"
+                    f"wszystkie relacje danego node")
+
+        return f"OK: Relacja '{relation}' dla node '{node_name}' to:\n - {relation} -> ({', '.join(node_in_question.n_relations[relation])})"
 
     def read_class(self, name) -> str:
         return f"{name}: {{ {self.classes[name].describe()} }}"
@@ -374,3 +451,156 @@ class KnowledgeGraph:
             return mess + (f"\nDostępne relacje:\n{self.read_relationships(internal=True)}\n"
                            f"Aby stworzyć relację użyj: 'define_relation'")
         return mess
+
+    def _validate_name(self, name: str) -> str:
+        if not self.IDENTIFIER_PATTERN.match(name):
+            return (f"BŁĄD: Nieprawidłowa nazwa '{name}'!\n"
+                    f"Wymagania:\n"
+                    f" - Nazwa musi zaczynać się od litery (A-Z lub a-z)\n"
+                    f" - Może zawierać tylko litery, cyfry oraz znak podkreślenia (_)\n"
+                    f" - Długość może wynosić od 1 do 64 znaków włącznie\n"
+                    f" - Polskie znaki (np. ą, ś, ż) nie są dozwolone!")
+
+        return ''
+
+    @staticmethod
+    def __deep_type(parameter: Any) -> str:
+        """
+        Sprawdzamy typ, nawet zagnieżdzonych struktur
+
+        :param parameter:
+        :return:
+        """
+
+        if isinstance(parameter, list):
+            if len(parameter) == 0:
+                return "list[EMPTY]"
+
+            base_type = type(parameter[0])
+            different_types: list[str] = [base_type.__name__]
+
+            for param in parameter:
+                if not isinstance(param, base_type):
+                    new_type = type(param).__name__
+
+                    if new_type not in different_types:
+                        different_types.append(new_type)
+
+            return f"list[{', '.join(different_types)}]"
+        return type(parameter).__name__
+
+    def _validate_initialize_parameters_type(self, parameters: dict[str, Any]) -> str:
+        """
+        Sprawdzamy, czy typy się zgadzają
+        Tylko gdy inicjalizujemy jakieś wartości np. dodajemmy do klasy
+
+        :param parameters:
+        :return:
+        """
+
+        error_messages: list[str] = []
+
+        for name, value in parameters.items():
+            if isinstance(value, self.VALID_TYPES):
+               continue
+
+            if isinstance(value, list):
+
+                # Pusta lista nie jest ok
+                if len(value) > 0:
+
+                    # Wszystkie parametry muszą być tego samego typu
+                    base_type = type(value[0])
+                    if all(type(item) is base_type and isinstance(item, self.VALID_TYPES) for item in value):
+                        continue
+
+            error_messages.append(f"BŁĄD: Parametr '{name}' używa niedozwolonego typu wartości: {self.__deep_type(value)}!")
+
+        if 'node_id' in parameters.keys():
+            error_messages.append((f"BŁAD: Nieprawidłowa nazwa 'node_id'!\n"
+                                   f"Nazwa 'node_id' jest zarezerwowaną nazwą systemową "
+                                   f"i nie może być nazwą noda, klasy, relacji lub parametru!"))
+
+        if error_messages:
+            error_messages.append((f"Dozwolone typy parametrów to: {', '.join(self.VALID_NAMES)}.\n"
+                                  f"Sprawdź poprawność przekazanych parametrów i spróbuj ponownie."))
+
+            return '\n'.join(error_messages)
+        return ''
+
+    def clear(self):
+        self.nodes.clear()
+        self.classes.clear()
+        self.relations.clear()
+
+    # TODO
+    def sync(self, driver: Driver) -> None:
+        pass
+
+llm_tools: tuple
+
+def build_graph_with_ollama(model: str, system: str, documents: str):
+    knowledge_graph.clear()
+
+    llm = ChatModel(model=model,
+                    system=system,
+                    tools=llm_tools)
+
+    llm.pretty(documents, max_tool_iterations=1024)
+
+def initialize_graph_driver():
+    global graph_driver
+
+    graph_driver = GraphDatabase.driver(GRAPH_DB_URL, auth=("neo4j", GRAPH_DB_PASSWORD))
+
+    # Jeżeli nie wywali bład, to znaczy, że działa
+    try:
+        graph_driver.verify_connectivity()
+
+        print("OK: Połączenie z neo4j działa")
+
+    except ServiceUnavailable as e:
+        print(f"BŁĄD: Nie można połączyć się z bazą: {e}")
+
+    except AuthError as e:
+        print(f"BŁĄD: Błędne dane logowania: {e}")
+
+    except Exception as e:
+        print(f"BŁĄD: Inny nieoczekiwany błąd połączenia: {type(e).__name__}: {e}")
+
+    # Sprawdza, czy w bazie zainstalowane jest APOC
+    def is_apoc_available(driver: Driver, database: str = 'neo4j') -> bool:
+        records, _, _ = driver.execute_query(
+            "SHOW PROCEDURES YIELD name WHERE name STARTS WITH 'apoc.merge' RETURN count(*) AS n",
+            database_=database,
+        )
+
+        return bool(records) and records[0]["n"] > 0
+
+    if not is_apoc_available(driver=graph_driver):
+        raise RuntimeError(
+            "APOC nie jest zainstalowane w tej bazie Neo4j! "
+            "Zainstaluj wtyczkę APOC (w Neo4j Desktop: zakładka Plugins przy bazie, "
+            "albo w Docker: zmienna środowiskowa NEO4J_PLUGINS=[\"apoc\"]), "
+            "restart bazy, i spróbuj ponownie."
+        )
+
+    print("APOC jest dostępne.")
+
+def initialize_knowledge_graph():
+    global knowledge_graph
+
+    knowledge_graph = KnowledgeGraph()
+
+def purge_database(driver: Driver, database: str = "neo4j", batch: int = 1024) -> None:
+    driver.execute_query(
+        """
+        CALL apoc.periodic.iterate(
+            'MATCH (n) RETURN n',
+            'DETACH DELETE n',
+            {batchSize: $batch_size}
+        )
+        """,
+        batch_size=batch,
+        database_=database,
+    )

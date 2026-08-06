@@ -2,6 +2,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from neo4j.exceptions import ServiceUnavailable, AuthError
+
 from app.core import GRAPH_DB_URL, GRAPH_DB_PASSWORD, ChatModel
 from langchain.tools import tool
 
@@ -171,7 +173,54 @@ def initialize_graph_driver():
 
     graph_driver = GraphDatabase.driver(GRAPH_DB_URL, auth=("neo4j", GRAPH_DB_PASSWORD))
 
+    # Jeżeli nie wywali bład, to znaczy, że działa
+    try:
+        graph_driver.verify_connectivity()
+
+        print("OK: Połączenie z neo4j działa")
+
+    except ServiceUnavailable as e:
+        print(f"BŁĄD: Nie można połączyć się z bazą: {e}")
+
+    except AuthError as e:
+        print(f"BŁĄD: Błędne dane logowania: {e}")
+
+    except Exception as e:
+        print(f"BŁĄD: Inny nieoczekiwany błąd połączenia: {type(e).__name__}: {e}")
+
+    # Sprawdza, czy w bazie zainstalowane jest APOC
+    def is_apoc_available(driver: Driver, database: str = 'neo4j') -> bool:
+        records, _, _ = driver.execute_query(
+            "SHOW PROCEDURES YIELD name WHERE name STARTS WITH 'apoc.merge' RETURN count(*) AS n",
+            database_=database,
+        )
+
+        return bool(records) and records[0]["n"] > 0
+
+    if not is_apoc_available(driver=graph_driver):
+        raise RuntimeError(
+            "APOC nie jest zainstalowane w tej bazie Neo4j! "
+            "Zainstaluj wtyczkę APOC (w Neo4j Desktop: zakładka Plugins przy bazie, "
+            "albo w Docker: zmienna środowiskowa NEO4J_PLUGINS=[\"apoc\"]), "
+            "restart bazy, i spróbuj ponownie."
+        )
+
+    print("APOC jest dostępne.")
+
 def initialize_knowledge_graph():
     global knowledge_graph
 
     knowledge_graph = KnowledgeGraph()
+
+def purge_database(driver: Driver, database: str = "neo4j", batch: int = 1024) -> None:
+    driver.execute_query(
+        """
+        CALL apoc.periodic.iterate(
+            'MATCH (n) RETURN n',
+            'DETACH DELETE n',
+            {batchSize: $batch_size}
+        )
+        """,
+        batch_size=batch,
+        database_=database,
+    )
