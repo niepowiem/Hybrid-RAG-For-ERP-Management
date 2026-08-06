@@ -1205,7 +1205,7 @@ def build_graph_with_ollama(model: str, documents: str, system: str | None = Non
     knowledge_graph.clear()
 
     if system is None:
-        with open("../system/prompt_0_60826.md", "r", encoding="utf-8") as f:
+        with open("system/prompt_0_60826.md", "r", encoding="utf-8") as f:
             system = f.read()
 
     llm = ChatModel(model=model,
@@ -1281,7 +1281,7 @@ def print_graph(kg: KnowledgeGraph | None = None) -> None:
     kg = kg or knowledge_graph
     sep = "=" * 70
 
-    print(sep)
+    print("\n\n" + sep)
     print("KLASY")
     print(sep)
     print(kg.read_classes())

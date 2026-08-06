@@ -128,8 +128,8 @@ def prepare_for_lexical_search(document: KB_DATATYPE) -> str:
             document.module,
             document.query,
             *document.causes,
-            *[error_solution.solution for error_solution in document.solutions],
-            *[error_solution.ref for error_solution in document.solutions]
+            *[step for error_solution in document.solutions for step in error_solution.solution],
+            *[ref for error_solution in document.solutions for ref in error_solution.ref],
         ]
 
     elif isinstance(document, Concept):
