@@ -7,6 +7,7 @@ from neo4j import Driver, GraphDatabase
 from neo4j.exceptions import ServiceUnavailable, AuthError
 from pydantic import BaseModel, Field, ValidationError
 import re
+from tqdm import tqdm
 
 from app.core import ChatModel, GRAPH_DB_URL, GRAPH_DB_PASSWORD
 
@@ -803,13 +804,26 @@ class KnowledgeGraph:
         with driver.session(database=database) as session:
             # Węzły MUSZĄ trafić do bazy PRZED relacjami -- inaczej MATCH w zapisie
             # relacji nie znajdzie jeszcze nieistniejącego węzła i relacja zniknie po cichu.
-            for i in range(0, len(node_rows), batch_size):
-                chunk = node_rows[i:i + batch_size]
-                written_nodes += session.execute_write(self.__write_node_batch, chunk)
 
-            for i in range(0, len(relation_rows), batch_size):
-                chunk = relation_rows[i:i + batch_size]
-                written_relations += session.execute_write(self.__write_relation_batch, chunk, self.SHARED_LABEL)
+            # Inicjalizacja paska postępu z określeniem całkowitej liczby elementów
+            with tqdm(total=len(node_rows), desc="Zapisywanie węzłów") as pbar:
+                for i in range(0, len(node_rows), batch_size):
+                    chunk = node_rows[i: i + batch_size]
+                    written_nodes += session.execute_write(self.__write_node_batch, chunk)
+
+                    # Ręczna aktualizacja paska o wielkość przetworzonej paczki (chunk)
+                    pbar.update(len(chunk))
+
+            # Inicjalizacja paska postępu dla relacji z określeniem całkowitej liczby elementów
+            with tqdm(total=len(relation_rows), desc="Zapisywanie relacji") as pbar:
+                for i in range(0, len(relation_rows), batch_size):
+                    chunk = relation_rows[i: i + batch_size]
+                    written_relations += session.execute_write(
+                        self.__write_relation_batch, chunk, self.SHARED_LABEL
+                    )
+
+                    # Ręczna aktualizacja paska o wielkość przetworzonej paczki
+                    pbar.update(len(chunk))
 
         return {"nodes": written_nodes, "relations": written_relations}
 
@@ -848,6 +862,12 @@ class KnowledgeGraph:
             rows=rows,
         )
         return result.single()["written"]
+
+    def clear(self):
+        self.nodes.clear()
+        self.relations.clear()
+        self.classes.clear()
+        self.labels.clear()
 
 def _llm_passed_invalid_parameters(value: Any) -> tuple[dict[str, Any] | None, str | None]:
     """
@@ -1178,11 +1198,15 @@ KNOWLEDGE_GRAPH_TOOLS = [
     define_label,
     add_node_label,
     read_labels,
-    read_node_labels,
+    read_node_labels
 ]
 
-def build_graph_with_ollama(model: str, system: str, documents: str):
+def build_graph_with_ollama(model: str, documents: str, system: str | None = None):
     knowledge_graph.clear()
+
+    if system is None:
+        with open("../system/prompt_0_60826.md", "r", encoding="utf-8") as f:
+            system = f.read()
 
     llm = ChatModel(model=model,
                     system=system,
@@ -1246,3 +1270,42 @@ def purge_database(driver: Driver, database: str = "neo4j", batch: int = 1024) -
         batch_size=batch,
         database_=database,
     )
+
+def print_graph(kg: KnowledgeGraph | None = None) -> None:
+    """
+    Szybki podgląd całego grafu w konsoli -- klasy, relacje, etykiety, węzły
+    (z parametrami, relacjami i etykietami każdego z nich) -- bez potrzeby Neo4j,
+    czyta bezpośrednio z bufora w pamięci.
+    """
+
+    kg = kg or knowledge_graph
+    sep = "=" * 70
+
+    print(sep)
+    print("KLASY")
+    print(sep)
+    print(kg.read_classes())
+
+    print(f"\n{sep}")
+    print("RELACJE (zarejestrowane typy)")
+    print(sep)
+    print(kg.read_relationships())
+
+    print(f"\n{sep}")
+    print("ETYKIETY (zarejestrowane, opcjonalne)")
+    print(sep)
+    print(kg.read_labels())
+
+    print(f"\n{sep}")
+    print(f"WĘZŁY ({len(kg.nodes)})")
+    print(sep)
+
+    if not kg.nodes:
+        print("(brak węzłów)")
+        return
+
+    for node_name in kg.nodes:
+        print(f"\n--- {node_name} ---")
+        print(kg.read_node_parameters(node_name, internal=True))
+        print(kg.read_node_labels(node_name, internal=True))
+        print(kg.read_node_relations(node_name))

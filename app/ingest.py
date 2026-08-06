@@ -4,15 +4,19 @@ from pathlib import Path
 from pydantic import ValidationError
 from app.schema import Procedure, Error, Concept, KB_DATATYPE
 
-knowledge_directory = Path("../knowledge")
-
 CATEGORY: dict[str, type[KB_DATATYPE]] = {
     "procedures": Procedure,
     "errors": Error,
     "concepts": Concept
 }
 
-def load_knowledge() -> list[KB_DATATYPE]:
+def load_knowledge(knowledge_directory: str | None = None) -> list[KB_DATATYPE]:
+    if knowledge_directory is None:
+        knowledge_directory = Path("../knowledge")
+
+    else:
+        knowledge_directory = Path(knowledge_directory)
+
     documents: list[KB_DATATYPE] = []
     errors: int = 0
 

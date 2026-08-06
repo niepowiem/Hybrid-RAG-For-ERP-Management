@@ -248,7 +248,7 @@ class ChatModel:
         yield {"type": "limit"}
 
     def pretty(self, message: str, think: bool = True, max_tool_iterations: int = 256):
-        for event in self.ask_stream(message, think=think, max_tool_iterations=max_tool_iterations, options={"temperature": 0.1, "top_p": 0.9, "num_predict": -1}):
+        for event in self.ask_stream(message, think=think, max_tool_iterations=max_tool_iterations, options={"temperature": 0.1, "top_p": 0.9, "num_predict": -1, "num_ctx": 163840}):
             match event["type"]:
                 case "thinking":
                     print(f"\033[90m{event['text']}\033[0m", end="", flush=True)
