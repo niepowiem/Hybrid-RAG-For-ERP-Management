@@ -1,16 +1,16 @@
 name: erp-assistant-dbs
 
 services:
-  erp-assistant-vector-db:
-    container_name: erp-assistant-vector-db
-    image: pgvector/pgvector:pg17
-    ports:
-      - "5433:5432"
-    environment:
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
+#  erp-assistant-vector-db:
+#    container_name: erp-assistant-vector-db
+#    image: pgvector/pgvector:pg17
+#    ports:
+#      - "5433:5432"
+#    environment:
+#      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+#      POSTGRES_DB: ${POSTGRES_DB}
+#    volumes:
+#      - pgdata:/var/lib/postgresql/data
 
   erp-assistant-graph-db:
     container_name: erp-assistant-graph-db
@@ -20,9 +20,15 @@ services:
       - "7687:7687"
     environment:
       NEO4J_AUTH: neo4j/${GRAPH_DB_PASSWORD}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: "apoc.*"
+      NEO4J_dbms_security_procedures_allowlist: "apoc.*"
+
     volumes:
       - neo4jdata:/data
+      - neo4jplugins:/plugins
 
 volumes:
-  pgdata:
+#  pgdata:
   neo4jdata:
+  neo4jplugins:
