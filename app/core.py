@@ -271,9 +271,9 @@ class ChatModel:
         self.messages = [{"role": "system", "content": self.system}]
 
 class EmbedModel:
-    __slots__ = ("model", "dim")
+    __slots__ = ("model",)
 
-    def __init__(self, model: str, dim: int) -> None:
+    def __init__(self, model: str) -> None:
         """
         Class that allows for encoding messages
 
@@ -281,7 +281,6 @@ class EmbedModel:
         """
 
         self.model: str = model
-        self.dim: int = dim
 
     def encode(self, message: str | list[str], timeout: int= 120) -> list[list[float]]:
         payload: dict[str, Any] = {

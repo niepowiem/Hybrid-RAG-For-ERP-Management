@@ -1,7 +1,12 @@
 import yaml
 import sys
 from pathlib import Path
+
+from neo4j import Driver
 from pydantic import ValidationError
+
+from app.core import EMBED_MODEL, EmbedModel, EMBED_MODEL_DIM
+from app.graph import initialize_knowledge_graph, build_graph_with_ollama, print_graph, knowledge_graph
 from app.schema import Procedure, Error, Concept, KB_DATATYPE
 
 CATEGORY: dict[str, type[KB_DATATYPE]] = {
@@ -53,6 +58,31 @@ def check_for_duplicates(documents: list[KB_DATATYPE]):
     if duplicates:
         for document in duplicates:
             print(f"Duplicate id: {document.id}, {type(document)}")
+
+def ingest_llm(driver: Driver, model:str):
+    initialize_knowledge_graph()
+
+    documents = load_knowledge("./knowledge")
+    check_for_duplicates(documents)
+
+    document_string: str = '\n\n'.join(
+        [document.__repr__() for document in documents]
+    )
+
+    print(document_string)
+
+    build_graph_with_ollama(model=model, documents=document_string)
+
+    print_graph()
+
+    input("[ENTER], aby zsynchronizować do bazy danych...")
+
+    result = knowledge_graph.sync(driver=driver,
+                                  embed_model=EmbedModel(EMBED_MODEL),
+                                  embed_dimensions=EMBED_MODEL_DIM)
+
+    print(result)
+    print("\nGotowe!\nMożesz podglądać wyniki na: http://localhost:7474")
 
 if __name__ == "__main__":
     data_documents = load_knowledge()
