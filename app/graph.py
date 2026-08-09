@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import datetime
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -195,7 +195,7 @@ class KnowledgeGraph:
         if node_already_exists or module_missing or parameters is None:
             return '\n'.join(error_messages)
 
-        self.nodes[node_name] = GraphNode(c_name=class_name, c_parameters=parameters, module=module)
+        self.nodes[node_name] = GraphNode(c_name=class_name, c_parameters=parameters, module=module.strip())
 
         return (f"OK: Pomyślnie utworzono node '{node_name}' "
                 f"(etykiety: '{self.SHARED_LABEL}', '{self.class_label(class_name)}')."
@@ -1573,7 +1573,7 @@ def build_graph_with_ollama(model: str, documents: str, system: str | None = Non
     knowledge_graph.clear()
 
     if system is None:
-        system = (PROMPTS_DIR / "prompt_2_80826.md").read_text(encoding="utf-8")
+        system = (PROMPTS_DIR / "prompt_4_90826.md").read_text(encoding="utf-8")
 
     llm = ChatModel(model=model,
                     system=system,
@@ -1734,7 +1734,7 @@ def answer_with_ollama(model: str, question: str, system: str | None = None):
 
     llm.pretty(message=question)
 
-GRAPHS_DIR = PROJECT_ROOT / "knowledge" / "graphs"
+GRAPHS_DIR = PROJECT_ROOT / "database" / "graphs"
 GRAPH_FORMAT_VERSION = 1
 
 def _safe_filename_part(text: str) -> str:

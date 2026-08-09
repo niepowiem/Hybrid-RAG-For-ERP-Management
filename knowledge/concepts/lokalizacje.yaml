@@ -1,0 +1,18 @@
+- id: concept.lokalizacja-magazynowa
+  module: lokalizacje
+  title: Lokalizacja magazynowa
+  aliases: [regał, adres magazynowy, miejsce składowania, gniazdo, adres składowania]
+  body: |
+    Lokalizacja to konkretny adres wewnątrz magazynu, w układzie regał-poziom,
+    np. A-01 albo C-12. Kod lokalizacji jest unikalny w obrębie magazynu —
+    dwa różne magazyny mogą mieć lokalizację A-01, ale jeden magazyn nie może
+    mieć dwóch.
+
+    Lokalizację wpisuje się na pozycjach dokumentów magazynowych w polu
+    Lokalizacja, dzięki czemu wiadomo, gdzie fizycznie odłożono lub skąd
+    pobrano towar. Lokalizacja ma orientacyjną pojemność w sztukach; zero
+    oznacza pojemność nieokreśloną.
+
+    Lokalizacji użytej na dokumentach nie da się dezaktywować — historia
+    ruchów musi wskazywać istniejące adresy. Wycofywany regał zostawia się
+    aktywny i przestaje go używać, a towar przenosi dokumentem MM.

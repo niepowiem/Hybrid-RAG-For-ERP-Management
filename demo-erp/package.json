@@ -1,0 +1,20 @@
+{
+  "name": "demo-erp",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm-run-all --parallel dev:api dev:web",
+    "dev:api": "npm run dev -w @demo-erp/api",
+    "dev:web": "npm run dev -w @demo-erp/web",
+    "typecheck": "npm run typecheck -w @demo-erp/shared && npm run typecheck -w @demo-erp/api && npm run typecheck -w @demo-erp/web",
+    "kb:generate": "tsx scripts/generate-kb.ts"
+  },
+  "devDependencies": {
+    "npm-run-all": "^4.1.5",
+    "tsx": "^4.19.0",
+    "yaml": "^2.6.0",
+    "typescript": "^5.6.0"
+  }
+}

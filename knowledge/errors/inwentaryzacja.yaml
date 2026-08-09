@@ -1,0 +1,50 @@
+- id: ERR-4001
+  module: inwentaryzacja
+  query: Dla tego magazynu istnieje już otwarta inwentaryzacja. Zamknij ją, zanim rozpoczniesz nową.
+  causes:
+    - Poprzednia inwentaryzacja tego magazynu nie została zamknięta
+    - Ktoś inny rozpoczął inwentaryzację równolegle
+  solutions:
+    - solution:
+        - Otwórz istniejący arkusz z listy i dokończ liczenie
+        - Po zamknięciu arkusza możesz rozpocząć nową inwentaryzację
+      ref:
+        - proc.inwentaryzacja.wprowadzenie-liczen
+        - proc.inwentaryzacja.zamkniecie
+
+- id: ERR-4002
+  module: inwentaryzacja
+  query: Nie można zamknąć inwentaryzacji — nie wszystkie pozycje zostały policzone.
+  causes:
+    - Co najmniej jedna pozycja arkusza ma puste pole Policzono
+  solutions:
+    - solution:
+        - Uzupełnij ilość policzoną dla każdej pozycji arkusza
+        - Jeśli produktu fizycznie nie ma, wpisz zero — puste pole a zero to nie to samo
+      ref:
+        - proc.inwentaryzacja.wprowadzenie-liczen
+
+- id: ERR-4003
+  module: inwentaryzacja
+  query: Tylko kierownik może zamknąć inwentaryzację.
+  causes:
+    - Zalogowana rola to magazynier, a zamknięcie arkusza wymaga roli kierownik
+  solutions:
+    - solution:
+        - Poproś kierownika o zamknięcie arkusza
+        - Arkusz pozostaje otwarty, a wpisane liczenia nie przepadają
+      ref:
+        - proc.inwentaryzacja.zamkniecie
+
+- id: ERR-4004
+  module: inwentaryzacja
+  query: Inwentaryzacja jest zamknięta — nie można już zmieniać liczeń.
+  causes:
+    - Arkusz został zamknięty przez kierownika i jest tylko do odczytu
+  solutions:
+    - solution:
+        - Zamkniętego arkusza nie da się ponownie otworzyć
+        - Różnice inwentaryzacyjne koryguje się dokumentami PZ dla nadwyżek lub WZ dla niedoborów
+      ref:
+        - proc.magazyn.przyjecie-pz
+        - proc.magazyn.wydanie-wz

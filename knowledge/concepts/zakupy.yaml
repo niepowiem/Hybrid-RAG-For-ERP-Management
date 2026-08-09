@@ -1,0 +1,40 @@
+- id: concept.zamowienie-zakupu
+  module: zakupy
+  title: Zamówienie zakupu (ZZ)
+  aliases: [zz, zamówienie do dostawcy, zakup towaru, domówienie towaru]
+  body: |
+    Zamówienie zakupu to dokument handlowy, którym zamawia się towar
+    u dostawcy. Samo zamówienie nie zmienia stanów magazynowych — jest
+    zapowiedzią przyszłej dostawy, nie ruchem towaru.
+
+    Cykl życia zamówienia ma trzy statusy. Szkic można przygotowywać
+    i poprawiać. Wysłanie do dostawcy zmienia status na Zamówione i blokuje
+    edycję. Przyjęcie dostawy zmienia status na Zrealizowane.
+
+    Przyjęcie dostawy automatycznie tworzy szkic dokumentu PZ z pozycjami
+    przepisanymi z zamówienia; numer zamówienia trafia w pole Numer obcy,
+    co pozwala później powiązać dokument magazynowy z zamówieniem. Stany
+    magazynowe rosną dopiero po zatwierdzeniu tego PZ — magazynier ma
+    najpierw zweryfikować ilości z dostawą fizyczną. Braki i nadwyżki
+    w dostawie koryguje się na szkicu PZ przed zatwierdzeniem.
+
+- id: concept.faktura-zakupu
+  module: zakupy
+  title: Faktura zakupu (FZ)
+  aliases: [fz, faktura od dostawcy, faktura kosztowa, faktura zakupowa]
+  body: |
+    Faktura zakupu rejestruje dokument księgowy otrzymany od dostawcy.
+    Można ją powiązać z zamówieniem zakupu — wtedy dostawca i pozycje
+    wypełniają się automatycznie z tego zamówienia, co spina łańcuch:
+    zamówienie ZZ, przyjęcie towaru dokumentem PZ, faktura FZ.
+
+    Numer faktury nadany przez dostawcę (numer zewnętrzny) musi być unikalny
+    w obrębie danego dostawcy — chroni to przed podwójnym wprowadzeniem tego
+    samego dokumentu. Pozycje mają stawki VAT, a podsumowanie liczy wartość
+    netto, kwotę VAT i brutto.
+
+    Cykl życia faktury ma dwa statusy: Szkic i Zaksięgowana. Szkic można
+    poprawiać, zaksięgowanie jest nieodwracalne i zamyka fakturę do edycji.
+    Pomyłki na zaksięgowanej fakturze koryguje się osobnym dokumentem
+    korekty. Faktura zakupu nie zmienia stanów magazynowych — to robi
+    dokument PZ; faktura jest wyłącznie dokumentem kosztowym i rozliczeniowym.

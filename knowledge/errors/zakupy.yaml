@@ -1,0 +1,61 @@
+- id: ERR-5001
+  module: zakupy
+  query: Nie można wysłać zamówienia bez pozycji.
+  causes:
+    - Zamówienie nie ma żadnej pozycji z produktem i ilością
+  solutions:
+    - solution:
+        - Utwórz zamówienie ponownie dodając co najmniej jedną pozycję z produktem i ilością
+      ref:
+        - proc.zakupy.utworzenie-zamowienia
+
+- id: ERR-5002
+  module: zakupy
+  query: Dostawca jest nieaktywny — nie można wysłać do niego zamówienia.
+  causes:
+    - Kontrahent został dezaktywowany w kartotece po utworzeniu zamówienia
+  solutions:
+    - solution:
+        - Utwórz zamówienie na innego, aktywnego dostawcę
+        - Jeśli dostawca powinien być aktywny, sprawdź jego status w kartotece Kontrahenci
+      ref:
+        - proc.zakupy.utworzenie-zamowienia
+
+- id: ERR-5003
+  module: zakupy
+  query: Ta operacja nie jest dostępna w bieżącym statusie zamówienia.
+  causes:
+    - Wysłać można tylko zamówienie w statusie Szkic
+    - Przyjąć dostawę można tylko z zamówienia w statusie Zamówione
+    - Zamówienie zrealizowane jest zamknięte i nie obsługuje żadnych operacji
+  solutions:
+    - solution:
+        - Sprawdź status zamówienia na liście
+        - Szkic najpierw wyślij do dostawcy, dopiero z wysłanego zamówienia przyjmiesz dostawę
+      ref:
+        - proc.zakupy.wyslanie-zamowienia
+        - proc.zakupy.przyjecie-dostawy
+
+- id: ERR-5201
+  module: zakupy
+  query: Numer faktury od tego dostawcy już istnieje w systemie.
+  causes:
+    - Faktura o tym numerze zewnętrznym została już zarejestrowana dla tego dostawcy
+  solutions:
+    - solution:
+        - Sprawdź na liście faktur, czy nie została już wprowadzona wcześniej
+        - Jeśli to korekta, użyj numeru z oznaczeniem korekty nadanego przez dostawcę
+      ref:
+        - proc.zakupy.rejestracja-faktury
+
+- id: ERR-5202
+  module: zakupy
+  query: Faktura jest już zaksięgowana i nie można jej edytować.
+  causes:
+    - Faktura została zaksięgowana i jest zamknięta
+  solutions:
+    - solution:
+        - Zaksięgowaną fakturę koryguje się osobnym dokumentem korekty
+        - Jeśli to pomyłka, wprowadź fakturę korygującą od dostawcy
+      ref:
+        - proc.zakupy.rejestracja-faktury

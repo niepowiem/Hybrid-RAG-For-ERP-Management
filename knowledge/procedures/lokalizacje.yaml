@@ -1,0 +1,94 @@
+- id: proc.lokalizacje.dodanie-lokalizacji
+  title: Dodanie nowej lokalizacji magazynowej
+  module: lokalizacje
+  summary: Jak dodać nowy adres składowania w wybranym magazynie i nadać mu kod.
+  query:
+    - jak dodać lokalizację
+    - jak dodać nowy regał
+    - nowe miejsce składowania
+    - jak utworzyć adres magazynowy
+    - gdzie dodaję lokalizacje
+  roles:
+    - magazynier
+    - kierownik
+  steps:
+    - text: Przejdź do Lokalizacje w menu bocznym
+      anchor: nav.locations
+      action: { kind: click }
+    - text: Kliknij Nowa lokalizacja
+      anchor: btn.location-new
+      action: { kind: click }
+    - text: W polu Magazyn wybierz magazyn, w którym powstaje lokalizacja
+      anchor: field.location-warehouse
+      action: { kind: select, label: "MAG-GL" }
+    - text: Wpisz kod lokalizacji w układzie regał-poziom
+      anchor: field.location-code
+      action: { kind: fill, value: "F-01" }
+      note: Podpowiedź pod polem przypomina, że kod musi być unikalny w obrębie magazynu
+    - text: Podaj orientacyjną pojemność w sztukach
+      anchor: field.location-capacity
+      action: { kind: fill, value: "400" }
+      note: Zero oznacza pojemność nieokreśloną
+    - text: W drugim wierszu formularza uzupełnij opis, żeby było wiadomo, co tam leży
+      anchor: field.location-description
+      action: { kind: fill, value: "Regał F — narzędzia" }
+    - text: W stopce formularza kliknij Zapisz lokalizację
+      anchor: btn.location-save
+      action: { kind: click }
+  verification: Nowa lokalizacja pojawia się na liście ze statusem Aktywna
+  common_errors:
+    - ERR-6001
+
+- id: proc.lokalizacje.dezaktywacja-lokalizacji
+  title: Dezaktywacja lokalizacji magazynowej
+  module: lokalizacje
+  summary: Jak wyłączyć lokalizację z użycia, gdy regał jest wycofywany lub remontowany.
+  query:
+    - jak usunąć lokalizację
+    - jak wyłączyć regał
+    - lokalizacja w remoncie co zrobić
+    - dezaktywacja miejsca składowania
+  roles:
+    - magazynier
+    - kierownik
+  preconditions:
+    - Lokalizacja nie może występować na pozycjach istniejących dokumentów
+  steps:
+    - text: Przejdź do Lokalizacje w menu bocznym
+      anchor: nav.locations
+      action: { kind: click }
+    - text: Znajdź lokalizację wpisując jej kod w pole wyszukiwania
+      anchor: field.location-search
+      action: { kind: fill, value: "E-09" }
+    - text: Kliknij Dezaktywuj w wierszu lokalizacji
+      anchor: btn.location-toggle
+      action: { kind: click }
+      note: Lokalizacji użytej na dokumentach nie da się dezaktywować — system pilnuje historii
+  verification: Status lokalizacji na liście zmienia się na Nieaktywna
+  common_errors:
+    - ERR-6002
+
+- id: proc.lokalizacje.wyszukanie-lokalizacji
+  title: Wyszukanie lokalizacji i filtrowanie po magazynie
+  module: lokalizacje
+  summary: Jak szybko znaleźć lokalizację po kodzie lub opisie i zawęzić listę do jednego magazynu.
+  query:
+    - gdzie jest lokalizacja
+    - jak znaleźć regał
+    - lista lokalizacji magazynu
+    - co leży na regale
+  roles:
+    - magazynier
+    - kierownik
+  steps:
+    - text: Przejdź do Lokalizacje w menu bocznym
+      anchor: nav.locations
+      action: { kind: click }
+    - text: W filtrze Magazyn wybierz interesujący Cię magazyn
+      anchor: field.location-filter-warehouse
+      action: { kind: select, label: "MAG-GL" }
+    - text: Wpisz kod lub fragment opisu w pole wyszukiwania
+      anchor: field.location-search
+      action: { kind: fill, value: "A-01" }
+      note: Wyszukiwanie działa po kodzie i po opisie jednocześnie
+  verification: Tabela pokazuje tylko lokalizacje pasujące do filtrów, licznik po prawej podaje ile z ilu

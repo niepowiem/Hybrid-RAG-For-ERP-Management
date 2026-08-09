@@ -1,0 +1,33 @@
+- id: concept.zamowienie-sprzedazy
+  module: sprzedaz
+  title: Zamówienie sprzedaży (ZS)
+  aliases: [zs, zamówienie od klienta, zamówienie klienta, sprzedaż towaru, zlecenie sprzedaży]
+  body: |
+    Zamówienie sprzedaży to dokument handlowy, którym klient zamawia towar.
+    Samo zamówienie nie zmienia stanów magazynowych — jest zapowiedzią
+    przyszłego wydania, nie ruchem towaru. To lustro zamówienia zakupu,
+    tylko po stronie odbiorcy zamiast dostawcy.
+
+    Cykl życia ma trzy statusy. Szkic można przygotowywać i poprawiać.
+    Potwierdzenie zmienia status na Potwierdzone i blokuje edycję.
+    Realizacja zmienia status na Zrealizowane.
+
+    Realizacja automatycznie tworzy szkic dokumentu WZ z pozycjami
+    przepisanymi z zamówienia; numer zamówienia trafia w pole Numer obcy.
+    Przed utworzeniem WZ system sprawdza, czy na magazynie wydania starcza
+    towaru — jeśli nie, realizacja jest wstrzymana. Stany magazynowe maleją
+    dopiero po zatwierdzeniu WZ, nie w chwili realizacji zamówienia.
+
+- id: concept.role-sprzedazy
+  module: sprzedaz
+  title: Kto obsługuje zamówienia sprzedaży
+  aliases: [uprawnienia sprzedaży, kto realizuje zamówienia, role sprzedaż]
+  body: |
+    Zamówienia sprzedaży w prototypie tworzą, potwierdzają i realizują
+    zarówno magazynier, jak i kierownik. Realizacja zamówienia kończy się
+    utworzeniem szkicu WZ, którego zatwierdzenie także jest w zasięgu obu ról
+    — inaczej niż przy przesunięciach MM, które zatwierdza wyłącznie kierownik.
+
+    Ograniczeniem realizacji nie jest więc rola, lecz stan magazynowy: bez
+    wystarczającej ilości towaru na magazynie wydania zamówienia nie da się
+    zrealizować, niezależnie od uprawnień.

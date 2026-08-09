@@ -72,7 +72,7 @@ def ingest_llm(driver: Driver, model:str):
                            f"zwraca wektory o wymiarze {len(test_vector)}. Popraw .env.")
 
 
-    documents = load_knowledge("./knowledge")
+    documents = load_knowledge()
     check_for_duplicates(documents)
 
     document_string: str = '\n\n'.join(
@@ -82,6 +82,14 @@ def ingest_llm(driver: Driver, model:str):
     print(document_string)
 
     build_graph_with_ollama(model=model, documents=document_string)
+
+    from app.plan import register_system_schema, attach_steps_from_documents
+
+    register_message = register_system_schema(graph.knowledge_graph)
+    print("\n".join(register_message))
+
+    report = attach_steps_from_documents(graph.knowledge_graph, documents)
+    print(f"\nDodano {report['kroki']} kroków do {report['procedury']} procedur")
 
     print_graph()
     saved_path = graph.save_graph(model=model, embed_model=EMBED_MODEL)
