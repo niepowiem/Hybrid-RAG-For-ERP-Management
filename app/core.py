@@ -1,5 +1,7 @@
 import json
 import os
+from pathlib import Path
+
 import httpx
 from typing import Any, Iterator, Callable, Iterable
 
@@ -8,15 +10,29 @@ from langchain.tools import BaseTool
 
 load_dotenv()
 
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-LLM_MODEL = os.getenv("LLM_MODEL")
+def _require_env(name: str) -> str:
+    """
+    Zmienna wymagana do działania -- brak wartości przerywa import z czytelnym
+    komunikatem zamiast wysyłać 'model: null' do Ollamy.
+    """
 
-EMBED_MODEL = os.getenv("EMBED_MODEL")
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(f"Brak zmiennej '{name}' w środowisku -- uzupełnij plik .env")
+
+    return value
+
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
+LLM_MODEL = _require_env("LLM_MODEL")
+
+EMBED_MODEL = _require_env("EMBED_MODEL")
 EMBED_MODEL_DIM = int(os.getenv("EMBED_MODEL_DIM", "1024"))
 
-GRAPH_MODEL= os.getenv("GRAPH_MODEL")
+GRAPH_MODEL = _require_env("GRAPH_MODEL")
 GRAPH_DB_URL = os.getenv("GRAPH_DB_URL", "bolt://localhost:7687")
-GRAPH_DB_PASSWORD = os.getenv("GRAPH_DB_PASSWORD")
+GRAPH_DB_PASSWORD = _require_env("GRAPH_DB_PASSWORD")
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 class ChatModel:
     __slots__ = ("model", "system", "memory", "messages", "tools", "tool_functions")
@@ -24,7 +40,7 @@ class ChatModel:
     def __init__(self, model: str,
                  system: str = "",
                  memory: bool = True,
-                 tools: Iterable | None = None) -> None:
+                 tools: Iterable[BaseTool] | None = None) -> None:
         """
         Class that allows for chatting with a model of your choosing including streaming, memory and tool use
 
@@ -39,8 +55,9 @@ class ChatModel:
         self.system: str = system or "Jesteś pomocnym asystentem."
         self.memory: bool = memory
 
-        self.tools: list[dict[str, Any]] = langchain_tools_to_ollama_format(tools) if tools else [ ]
-        self.tool_functions: dict[str, Callable] = langchain_tools_to_function_map(tools) if tools else { }
+        tool_list: list[BaseTool] = list(tools) if tools is not None else []
+        self.tools: list[dict[str, Any]] = langchain_tools_to_ollama_format(tool_list)
+        self.tool_functions: dict[str, Callable] = langchain_tools_to_function_map(tool_list)
 
         self.messages: list[dict[str, Any]] = [
             {"role": "system", "content": self.system},
@@ -65,16 +82,17 @@ class ChatModel:
                 {"role": "user", "content": message},
             ]
 
-    def _add_assistant_message(self, content: str) -> None:
+    def _end_assistant_turn(self) -> None:
         """
-        Adds model response to history (without thinking)
+        Kończy turę rozmowy. Przy memory=False zostawiamy wyłącznie system prompt --
+        wiadomości asystenta i wyniki narzędzi są potrzebne TYLKO w obrębie jednej
+        tury (pętla tool-callingu), nie pomiędzy turami.
 
-        :param content:
         :return:
         """
 
-        if self.memory:
-            self.messages.append({"role": "assistant", "content": content})
+        if not self.memory:
+            self.messages = [self.messages[0]]
 
     def _call_ollama(self, think: bool = False, stream: bool = False, options: dict[str, Any] | None = None,
                      timeout: int = 1200) -> dict[str, Any] | Iterator[dict[str, Any]]:
@@ -134,6 +152,7 @@ class ChatModel:
 
             self.messages.append({
                 "role": "tool",
+                # "tool_name": func_name,
                 "content": str(result)
             })
 
@@ -149,20 +168,22 @@ class ChatModel:
             result = self._call_ollama(think=think, stream=False, options=options)
 
             answer_message = result.get("message", {})
-            self.messages.append(answer_message)
+            if answer_message:
+                self.messages.append(answer_message)
 
             tool_calls = answer_message.get("tool_calls")
             if tool_calls:
                 self._execute_tool_calls(tool_calls)
+
                 continue
 
+            self._end_assistant_turn()
             content = answer_message.get("content", "")
-            if not self.memory:
-                # przywracamy zachowanie _add_assistant_message dla memory=False
-                self.messages = [self.messages[0], self.messages[-len(tool_calls or []) - 2]] if False else self.messages
+
             return content
 
-        return "Osiągnięto limit iteracji wywołań narzędzi."
+        self._end_assistant_turn()
+        return "BŁĄD: Osiągnięto limit iteracji wywołań narzędzi"
 
     def ask_stream(self, message: str, think: bool = False, max_tool_iterations: int = 8,
                    options: dict[str, Any] | None = None) -> Iterator[dict[str, str]]:
@@ -225,12 +246,20 @@ class ChatModel:
                         **({"tool_calls": tool_calls} if tool_calls else {})
                     }
 
-            self.messages.append(answer_message)
+                    yield {
+                        "type": "done",
+                        "reason": chunk.get("done_reason", "?"),
+                        "prompt_tokens": str(chunk.get("prompt_eval_count", "?")),
+                        "eval_tokens": str(chunk.get("eval_count", "?")),
+                    }
+
+            if answer_message:
+                self.messages.append(answer_message)
 
             if tool_calls:
                 for call in tool_calls:
                     func_name = call["function"]["name"]
-                    func_args = call["function"].get("arguments", {})
+                    func_args = call["function"].get("arguments", { })
 
                     yield {"type": "tool_call", "name": func_name, "arguments": func_args}
 
@@ -241,10 +270,10 @@ class ChatModel:
 
                 continue
 
-            self._add_assistant_message(stream_answer)
-
+            self._end_assistant_turn()
             return
 
+        self._end_assistant_turn()
         yield {"type": "limit"}
 
     def pretty(self, message: str, think: bool = True, max_tool_iterations: int = 256):
@@ -260,6 +289,9 @@ class ChatModel:
                     print(f"   ↳ {event['result']}\n", flush=True)
                 case "limit":
                     print("\n⚠️ Osiągnięto limit iteracji wywołań narzędzi.")
+                case "done":
+                    print(f"\n\033[90m[done_reason={event['reason']}, "
+                          f"prompt={event['prompt_tokens']} tok, out={event['eval_tokens']} tok]\033[0m", flush=True)
 
     def clear(self) -> None:
         """
@@ -282,17 +314,25 @@ class EmbedModel:
 
         self.model: str = model
 
-    def encode(self, message: str | list[str], timeout: int= 120) -> list[list[float]]:
+    def encode(self, message: str | list[str], timeout: int = 120) -> list[list[float]]:
         payload: dict[str, Any] = {
             "model": self.model,
             "input": message,
         }
 
         response = httpx.post(f"{OLLAMA_URL}/api/embed", json=payload, timeout=timeout)
+
+        if response.status_code == 404:
+            detail = response.text.strip()
+            raise RuntimeError(
+                f"Ollama zwróciła 404 dla /api/embed (model='{self.model}'): {detail}\n"
+                f"Sprawdź: 1) czy model jest pobrany ('ollama list', 'ollama pull {self.model}'), "
+                f"2) czy wersja Ollamy >= 0.3.4 ('ollama --version') -- starsze mają tylko /api/embeddings."
+            )
+
         response.raise_for_status()
 
         return response.json()["embeddings"]
-
 def langchain_tools_to_ollama_format(tools: list[BaseTool]) -> list[dict[str, Any]]:
     """
     Converts LangChain @tool-decorated functions into Ollama/OpenAI-style tool definitions

@@ -1,22 +1,20 @@
 from __future__ import annotations
 
+import datetime
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import json
 from langchain_core.tools import tool
 from neo4j import Driver, GraphDatabase
 from neo4j.exceptions import ServiceUnavailable, AuthError
-from app.core import EmbedModel
 from pydantic import BaseModel, Field, ValidationError
 import re
 from tqdm import tqdm
 
-from app.core import ChatModel, GRAPH_DB_URL, GRAPH_DB_PASSWORD, EMBED_MODEL, EMBED_MODEL_DIM
+from app.core import ChatModel, EmbedModel, GRAPH_DB_URL, GRAPH_DB_PASSWORD, EMBED_MODEL, EMBED_MODEL_DIM, PROJECT_ROOT
 
-graph_driver: Driver | None = None
-knowledge_graph: KnowledgeGraph | None = None
-embed_model: EmbedModel | None = None
 
 class GraphClassSchema(BaseModel):
     parameters: dict[str, Any] = Field(min_length=1)
@@ -45,6 +43,7 @@ class GraphNode:
     n_relations: dict[str, list[RelationEdge]] = field(default_factory=dict)
     n_labels: set[str] = field(default_factory=set)
     embeddings: list[float] | None = None
+    module: str = ""
 
 class KnowledgeGraph:
     __slots__ = ("nodes", "relations", "classes", "labels")
@@ -53,7 +52,8 @@ class KnowledgeGraph:
     VALID_NAMES = ('str', 'int', 'float', 'bool',
                    'list[str]', 'list[int]', 'list[float]', 'list[bool]')
 
-    RESERVED_PARAMETER_NAMES = ('node_id', 'klasa', 'embeddings')
+    MODULE_NAMES = ('module', 'modul')
+    RESERVED_PARAMETER_NAMES = ('node_id', 'klasa', 'embeddings', *MODULE_NAMES)
     CLASS_LABEL_PREFIX = "C_"
     SHARED_LABEL = "SHARED"
 
@@ -67,7 +67,7 @@ class KnowledgeGraph:
     # KLASY
     # ------------------------------------------------------------------
 
-    def define_class(self, class_name: str, parameters: dict[str, Any], parameters_to_embed: list[str] = []) -> str:
+    def define_class(self, class_name: str, parameters: dict[str, Any], parameters_to_embed: list[str] | None = None) -> str:
         if class_name in self.classes:
             return (f"BŁĄD: Klasa '{class_name}' już istnieje: {self.read_class(class_name)}."
                     f"Aby sprawdzić wszystkie dostępne klasy użyj komendy: 'read_classes'")
@@ -78,8 +78,16 @@ class KnowledgeGraph:
         if mess := self._validate_initialize_parameters_type(parameters):
             return mess
 
+        # sprawdzamy, czy wskazywane parametry podane parametry do embedding należą do parametrów
+        parameters_to_embed = parameters_to_embed or []
+        if invalid_keys := set(parameters_to_embed) - set(parameters.keys()):
+            return (f"BŁĄD: Parametry {sorted(invalid_keys)} wskazane do embeddingu nie istnieją "
+                    f"w definicji klasy '{class_name}'. Dostępne parametry: {', '.join(parameters.keys())}. "
+                    f"Popraw i wywołaj 'define_class' ponownie.")
+
         try:
             new_class = GraphClassSchema(parameters=parameters, parameters_to_embed=parameters_to_embed)
+
         except ValidationError as e:
             return f"BŁĄD: Nie udało się dodać klasy: '{class_name}'.: {e}"
 
@@ -165,30 +173,36 @@ class KnowledgeGraph:
     # WĘZŁY (NODE)
     # ------------------------------------------------------------------
 
-    def merge(self, node_name: str, class_name: str, parameters: dict[str, Any]) -> str:
+    def merge(self, node_name: str, class_name: str, module: str, parameters: dict[str, Any]) -> str:
         if mess := self._validate_name(class_name):
             return mess
 
         error_messages: list[str] = []
         node_already_exists: bool = node_name in self.nodes.keys()
+        module_missing: bool = not module or not module.strip()
 
         if node_already_exists:
-            error_messages.append(f"ERROR: Node '{node_name}' już istnieje! Aby sprawdzić wszystkie istniejące nody, użyj 'read_node_names'")
+            error_messages.append(f"BŁĄD: Node '{node_name}' już istnieje! Aby sprawdzić wszystkie istniejące nody, użyj 'read_node_names'")
+
+        if module_missing:
+            error_messages.append(("BŁĄD: Nie podano modułu dla node. Każdy node musi należeć do modułu ERP "
+                                   "(np. 'Magazyn', 'Sprzedaz', 'Ksiegowosc'). To po nim filtrowane jest wyszukiwanie."
+                                   "Podaj moduł i spróbuj jeszcze raz."))
 
         parameters, message = self._validate_parameters(class_name=class_name, parameters=parameters)
         error_messages.append(message)
 
-        if node_already_exists or parameters is None:
+        if node_already_exists or module_missing or parameters is None:
             return '\n'.join(error_messages)
 
-        self.nodes[node_name] = GraphNode(c_name=class_name, c_parameters=parameters)
+        self.nodes[node_name] = GraphNode(c_name=class_name, c_parameters=parameters, module=module)
 
         return (f"OK: Pomyślnie utworzono node '{node_name}' "
                 f"(etykiety: '{self.SHARED_LABEL}', '{self.class_label(class_name)}')."
                 f"Aby zobaczyć wszystkie utworzone node użyj 'read_node_names'.\n"
                 f"{'\n'.join(error_messages)}")
 
-    def edit_node_parameters(self, node_name: str, parameters: dict[str, Any]) -> str:
+    def edit_node_parameters(self, node_name: str, parameters: dict[str, Any], module:str | None = None) -> str:
         node_in_question = self.nodes.get(node_name, None)
         if node_in_question is None:
             return self.err_mess_node_doesnt_exist(node_name)
@@ -211,8 +225,13 @@ class KnowledgeGraph:
             return (f"BŁĄD: Nie udało się edytować parametrów node '{node_name}'."
                     f"Wyeliminuj poniższe błędy i spróbuj ponownie:\n{'\n'.join(error_messages)}")
 
+        module_message: str = ''
+        if module is not None and module.strip():
+            module_message: str = f"\nOK: Module node '{node_name}' został pomyślnie zmieniony"
+            node_in_question.module = module.strip()
+
         node_in_question.c_parameters = {**node_in_question.c_parameters, **parameters}
-        return f"OK: Parametry node '{node_name}' zostały pomyślnie zaktualizowane."
+        return f"OK: Parametry node '{node_name}' zostały pomyślnie zaktualizowane." + module_message
 
     def read_node_parameters(self, node_name: str, internal: bool = False) -> str:
         node_in_question = self.nodes.get(node_name, None)
@@ -224,8 +243,8 @@ class KnowledgeGraph:
             return self.err_mess_class_doesnt_exist(node_in_question.c_name)
 
         merged_parameters = node_class.parameters | node_in_question.c_parameters
-        node_info = (f"{node_name}: (klasa={node_in_question.c_name}), "
-                    f"{{ {', '.join([f"'{k}': {type(v).__name__} = {v}" for k, v in merged_parameters.items()])} }}")
+        node_info = (f"{node_name}: (klasa={node_in_question.c_name}, modul={node_in_question.module}), "
+                     f"{{ {', '.join([f"'{k}': {type(v).__name__} = {v}" for k, v in merged_parameters.items()])} }}")
 
         if internal:
             return node_info
@@ -257,7 +276,7 @@ class KnowledgeGraph:
     def __make_embeddings(node_in_question: GraphNode, class_in_question: GraphClassSchema, embed_model: EmbedModel) -> bool:
         """
         Automatyczne embedowanie wskazanych wcześniej parametrów węzła. Wywoływane
-        z 'sync()', tuż przed zapisem do Neo4j.
+        z 'sync () ', tuż przed zapisem do Neo4j.
 
         :param node_in_question:
         :param class_in_question:
@@ -268,20 +287,13 @@ class KnowledgeGraph:
         if not class_in_question.parameters_to_embed:
             return False
 
-        def prepare_for_vector(parameters: dict[str, Any]):
+        def prepare_for_vector(parameters: dict[str, Any]) -> str:
             output: list[str] = []
 
             for k, v in parameters.items():
                 if isinstance(v, list):
-                    temporary: list[str] = []
-
-                    if v and isinstance(v[0], str):
-                        temporary = v
-                    else:
-                        for value in v:
-                            temporary.append(repr(value))
-
-                    output.append(f"[{', '.join(temporary)}]")
+                    items = [item if isinstance(item, str) else repr(item) for item in v]
+                    output.append(f"'{k}': [{', '.join(items)}]")
                 else:
                     output.append(f"'{k}': {v}")
 
@@ -298,7 +310,7 @@ class KnowledgeGraph:
 
         prepared_text_for_vector_embedding: str = prepare_for_vector(parameters)
 
-        # embed_model.encode() zwraca listę wektorów (struktura [[...]]) -- bierzemy pierwszy,
+        # embed_model.encode() zwraca listę wektorów (struktura [[...]]) — bierzemy pierwszy,
         # bo embedujemy jeden tekst na raz
         if embeddings := embed_model.encode(prepared_text_for_vector_embedding):
             node_in_question.embeddings = embeddings[0]
@@ -327,16 +339,17 @@ class KnowledgeGraph:
 
         parameters_to_add = list(given_parameters - shared_parameters)
         class_in_question.parameters_to_embed += parameters_to_add
+
         return (f"{info_message}\nOK: Dodano parametry embedingowe do klasy '{class_name}'. "
                 f"Aktualne parametry embedingowe to: {', '.join(class_in_question.parameters_to_embed)}")
 
     def remove_embeddings_parameters(self, class_name: str, parameters_to_embed: list[str]) -> str:
         """
-        Usuwamy parametry z listy tych embedowanych dla danej klasy -- sam parametr
+        Usuwamy parametry z listy tych embedowanych dla danej klasy — sam parametr
         w schemacie klasy (class.parameters) NIE jest usuwany, tylko przestaje być
         brany pod uwagę przy liczeniu embeddingu węzłów tej klasy.
 
-        :param class_name: nazwa klasy
+        :param class_name: Nazwa klasy
         :param parameters_to_embed: lista nazw parametrów do usunięcia z listy embedowanych
         :return:
         """
@@ -381,7 +394,7 @@ class KnowledgeGraph:
         relation = relation.upper()
 
         if relation in self.relations:
-            return (f"ERROR: Ta relacja: '{relation}' już istnieje. "
+            return (f"BŁĄD: Ta relacja: '{relation}' już istnieje. "
                     f"Nie można jej dodać drugi raz."
                     f"Aby sprawdzić wszystkie dostępne relacje użyj 'read_relationships'")
 
@@ -659,13 +672,18 @@ class KnowledgeGraph:
 
         reserved_used = [name for name in parameters if name in self.RESERVED_PARAMETER_NAMES]
         if reserved_used:
-            error_messages.append((f"BŁAD: Nazwy {reserved_used} są zarezerwowane systemowo "
-                                   f"i nie mogą być nazwą parametru!"))
+            reserved_message: str = f"BŁAD: Nazwy {reserved_used} są zarezerwowane systemowo i nie mogą być nazwą parametru!"
+
+            if any(possible_module_name in reserved_used for possible_module_name in self.MODULE_NAMES):
+                reserved_message += f"Moduł należy podać osobnym argumentem 'module' przy tworzeniu node ('merge'), a nie jako parametr klasy."
+
+            error_messages.append(reserved_message)
 
         if error_messages:
             error_messages.append((f"Dozwolone typy parametrów to: {', '.join(self.VALID_NAMES)}.\n"
                                   f"Sprawdź poprawność przekazanych parametrów i spróbuj ponownie."))
             return '\n'.join(error_messages)
+
         return ''
 
     def __validate_parameter_excessive_amount(self, entity_name: str, entity_keys: set[str], given_parameters: set[str]) -> str:
@@ -693,7 +711,7 @@ class KnowledgeGraph:
         return ''
 
     # ------------------------------------------------------------------
-    # SYNCHRONIZACJA Z NEO4J
+    # synchronizacja Z NEO4J
     # ------------------------------------------------------------------
 
     def ensure_constraints(self, driver, database: str = "neo4j") -> None:
@@ -706,11 +724,11 @@ class KnowledgeGraph:
     def ensure_vector_index(self, driver, dimensions: int, database: str = "neo4j",
                              index_name: str = "entity_embeddings", similarity: str = "cosine") -> None:
         """
-        Jeden indeks wektorowy na wspólnej etykiecie SHARED_LABEL -- obejmuje WSZYSTKIE
+        Jeden indeks wektorowy na wspólnej etykiecie SHARED_LABEL — obejmuje Wszystkie
         klasy naraz, niezależnie od tego, ile ich model kiedykolwiek zdefiniuje.
 
-        :param driver: połączenie neo4j
-        :param dimensions: wymiar wektora (musi zgadzać się z modelem embeddingów, np. EMBED_MODEL_DIM)
+        :param driver: Połączenie neo4j
+        :param dimensions: wymiar wektora (musi zgadzać się z modelem embedding, np. EMBED_MODEL_DIM)
         :param database: nazwa bazy
         :param index_name: nazwa indeksu
         :param similarity: funkcja podobieństwa ('cosine' albo 'euclidean')
@@ -721,7 +739,7 @@ class KnowledgeGraph:
             f"CREATE VECTOR INDEX {index_name} IF NOT EXISTS "
             f"FOR (n:{self.SHARED_LABEL}) ON (n.embeddings) "
             f"OPTIONS {{ indexConfig: {{ "
-            f"`vector.dimensions`: $dimensions, "
+            f"`vector.dimensions`: toInteger($dimensions), "
             f"`vector.similarity_function`: $similarity "
             f"}} }}",
             dimensions=dimensions,
@@ -731,10 +749,10 @@ class KnowledgeGraph:
 
     def _compute_embeddings(self, embed_model: EmbedModel) -> int:
         """
-        Liczy embeddingi dla WSZYSTKICH węzłów, których klasa ma zdefiniowane
-        'parameters_to_embed'. Wywoływane z 'sync()', PRZED zapisem do bazy.
+        Liczy embeddingi dla Wszystkich węzłów, których klasa ma zdefiniowane
+        'parameters_to_embed'. Wywoływane z 'sync () ', PRZED zapisem do bazy.
 
-        :param embed_model: instancja modelu embeddingów (musi mieć metodę .encode())
+        :param embed_model: Instancja modelu embedding (musi mieć metodę.encode())
         :return: liczba węzłów, dla których policzono embedding
         """
 
@@ -755,9 +773,14 @@ class KnowledgeGraph:
 
         for node_name, node in self.nodes.items():
             labels = [self.SHARED_LABEL, self.class_label(node.c_name), *sorted(node.n_labels)]
-            properties = {**node.c_parameters, "node_id": node_name, "klasa": node.c_name}
+            properties: dict[str, Any] = {
+                **node.c_parameters,
+                "node_id": node_name,
+                "klasa": node.c_name,
+                "modul": node.module
+            }
 
-            # Neo4j nie przyjmuje None jako wartości właściwości -- dopisujemy
+            # Neo4j nie przyjmuje None jako wartości właściwości — dopisujemy
             # 'embeddings' TYLKO jeśli faktycznie zostało policzone
             if node.embeddings is not None:
                 properties["embeddings"] = node.embeddings
@@ -784,17 +807,17 @@ class KnowledgeGraph:
     def sync(self, driver, database: str = "neo4j", batch_size: int = 500,
              embed_model: EmbedModel | None = None, embed_dimensions: int | None = None) -> dict[str, int]:
         """
-        Zapisuje CAŁY graf (węzły + relacje) do Neo4j. Idempotentne -- bezpieczne
+        Zapisuje CAŁY graf (węzły + relacje) do Neo4j. Idempotentne — bezpieczne
         do wielokrotnego wywołania na tym samym stanie grafu.
 
-        :param driver: połączenie neo4j.GraphDatabase.driver(...)
+        :param driver: Połączenie neo4j.graphdatabase.driver (...)
         :param database: nazwa bazy
         :param batch_size: ile wierszy na jeden UNWIND
-        :param embed_model: opcjonalna instancja modelu embeddingów -- jeśli podana,
+        :param embed_model: opcjonalna instancja modelu embedding — jeśli podana,
             przed zapisem policzone zostaną embeddingi dla węzłów klas, które je mają
             skonfigurowane (patrz 'add_embedding_parameters'), i utworzony indeks wektorowy.
-            Jeśli pominięta -- embeddingi NIE są liczone (zachowanie jak dotychczas).
-        :param embed_dimensions: wymiar wektora, wymagany jeśli podano embed_model
+            Jeśli pominięta — embeddingi NIE są liczone (zachowanie jak dotychczas).
+        :param embed_dimensions: Wymiar wektora, wymagany, jeśli podano embed_model
             (np. EMBED_MODEL_DIM)
         :return: {"nodes": ile zapisano, "relations": ile zapisano, "embeddings": ile policzono}
         """
@@ -863,19 +886,20 @@ class KnowledgeGraph:
     # SEARCH
     # ------------------------------------------------------------------
 
+    # TODO
     @classmethod
-    def search_semantic(cls,driver, query_embedding: list[float], top_k: int = 5,
+    def search_semantic(cls, driver: Driver, query_embedding: list[float], top_k: int = 5,
                         module: str | None = None, database: str = "neo4j",
                         index_name: str = "entity_embeddings") -> list[dict[str, Any]]:
         """
         Wyszukiwanie semantyczne po CAŁYM grafie (indeks na SHARED_LABEL, więc
         niezależnie od klasy). Jeśli podano 'module', wyniki są filtrowane po
-        właściwości 'modul' PO STRONIE PYTHONA -- pobieramy więcej surowych wyników
+        właściwości 'modul' PO STRONIE PYTHONA — pobieramy więcej surowych wyników
         niż top_k (over-fetch), żeby filtr nie obcinał trafnych wyników zbyt wcześnie
-        (bezpieczne niezależnie od wersji Neo4j -- nie polega na natywnym filtrowanym
+        (bezpieczne niezależnie od wersji Neo4j — nie polega na natywnym filtrowanym
         wyszukiwaniu wektorowym, które jest dostępne dopiero w najnowszych wersjach).
 
-        :param driver: połączenie neo4j
+        :param driver: Połączenie neo4j
         :param query_embedding: wektor zapytania (ten sam model/wymiar co przy indeksowaniu)
         :param top_k: ile wyników zwrócić
         :param module: opcjonalny filtr po właściwości 'modul'
@@ -885,7 +909,6 @@ class KnowledgeGraph:
         """
 
         raw_k = top_k * 5 if module else top_k
-
         records, _, _ = driver.execute_query(
             """
             CALL db.index.vector.queryNodes($index_name, $raw_k, $query_embedding)
@@ -904,7 +927,7 @@ class KnowledgeGraph:
             props = dict(r["properties"])
             props.pop("embeddings", None)  # nigdy nie zwracamy surowego wektora do LLM
 
-            if module is not None and props.get("modul") != module:
+            if module is not None and props.get("modul", "").casefold() != module.casefold():
                 continue
 
             results.append({
@@ -920,17 +943,17 @@ class KnowledgeGraph:
         return results
 
     @classmethod
-    def explore_neighbors(cls, driver, node_id: str, hops: int = 2,
+    def explore_neighbors(cls, driver: Driver, node_id: str, hops: int = 2,
                           relation_types: list[str] | None = None,
                           limit: int = 50, database: str = "neo4j") -> dict[str, Any]:
         """
         Multi-hop: eksploruje sąsiedztwo danego węzła do 'hops' kroków w głąb.
-        Używa apoc.path.subgraphAll -- w przeciwieństwie do surowego Cyphera
-        (gdzie granice ścieżki zmiennej długości trudno bezpiecznie parametryzować),
+        Używa apoc.path.subgraphall — w przeciwieństwie do surowego cyphera
+        (gdzie granice ścieżki zmiennej długości trudno bezpiecznie parametrization),
         APOC przyjmuje konfigurację jako zwykły parametr, z limitem węzłów i
         opcjonalnym filtrem typów relacji.
 
-        :param driver: połączenie neo4j
+        :param driver: Połączenie neo4j
         :param node_id: węzeł startowy
         :param hops: maksymalna liczba kroków w głąb
         :param relation_types: opcjonalna lista typów relacji do przejścia (domyślnie: wszystkie)
@@ -978,13 +1001,13 @@ class KnowledgeGraph:
         return {"nodes": nodes_out, "relationships": relationships_out}
 
     @classmethod
-    def find_shortest_path(cls, driver, from_node_id: str, to_node_id: str,
+    def find_shortest_path(cls, driver: Driver, from_node_id: str, to_node_id: str,
                            max_hops: int = 6, database: str = "neo4j") -> list[dict[str, Any]] | None:
         """
-        Najkrótsza ścieżka między dwoma ZNANYMI węzłami -- natywna funkcja Cyphera
-        shortestPath(), bez potrzeby APOC.
+        Najkrótsza ścieżka między dwoma ZNANYMI węzłami — natywna funkcja cyphera
+        shortestPath (), bez potrzeby APOC.
 
-        :param driver: połączenie neo4j
+        :param driver: Połączenie neo4j
         :param from_node_id: węzeł startowy
         :param to_node_id: węzeł docelowy
         :param max_hops: maksymalna długość ścieżki do rozważenia
@@ -1058,8 +1081,8 @@ def _llm_passed_invalid_parameters(value: Any) -> tuple[dict[str, Any] | None, s
 
 def _llm_passed_invalid_list(value: Any) -> tuple[list[str] | None, str | None]:
     """
-    Analogiczne do '_llm_passed_invalid_parameters', ale dla list -- modele czasem
-    wysyłają listę jako string JSON (np. '["nazwa", "opis"]') zamiast prawdziwej listy.
+    Analogiczne do '_llm_passed_invalid_parameters', ale dla list — modele czasem
+    wysyłają listę jako string JSON (np. ' ["nazwa", "opis"] ') zamiast prawdziwej listy.
 
     :param value:
     :return:
@@ -1069,6 +1092,11 @@ def _llm_passed_invalid_list(value: Any) -> tuple[list[str] | None, str | None]:
         return [], None
 
     if isinstance(value, list):
+        if not all(isinstance(x, str) for x in value):
+            bad = [type(x).__name__ for x in value if not isinstance(x, str)]
+            return None, (f"BŁĄD: oczekiwano listy stringów, ale lista zawiera elementy typu: "
+                          f"{', '.join(bad)}. Podaj nazwy jako tekst, np. [\"tytul\", \"opis\"].")
+
         return value, None
 
     if isinstance(value, str):
@@ -1170,7 +1198,11 @@ def add_embedding_parameters(class_name: str, parameters_to_embed: list[str]) ->
     :return: confirmation message, or an explanation of what went wrong
     """
 
-    return knowledge_graph.add_embedding_parameters(class_name, parameters_to_embed)
+    parameters, error = _llm_passed_invalid_list(parameters_to_embed)
+    if error:
+        return error
+
+    return knowledge_graph.add_embedding_parameters(class_name, parameters)
 
 @tool
 def remove_embeddings_parameters(class_name: str, parameters_to_embed: list[str]) -> str:
@@ -1185,7 +1217,11 @@ def remove_embeddings_parameters(class_name: str, parameters_to_embed: list[str]
     :return: confirmation message, or an explanation of what went wrong
     """
 
-    return knowledge_graph.remove_embeddings_parameters(class_name, parameters_to_embed)
+    parameters, error = _llm_passed_invalid_list(parameters_to_embed)
+    if error:
+        return error
+
+    return knowledge_graph.remove_embeddings_parameters(class_name, parameters)
 
 @tool
 def read_embedding_parameters(class_name: str) -> str:
@@ -1200,7 +1236,7 @@ def read_embedding_parameters(class_name: str) -> str:
     return knowledge_graph.read_embedding_parameters(class_name)
 
 @tool
-def merge(node_name: str, class_name: str, parameters: dict[str, Any] | str) -> str:
+def merge(node_name: str, class_name: str, module:str, parameters: dict[str, Any] | str) -> str:
     """
     Creates a NEW node in the knowledge graph. FAILS if a node with this name already
     exists -- this is intentional, to prevent accidentally overwriting existing data.
@@ -1213,6 +1249,10 @@ def merge(node_name: str, class_name: str, parameters: dict[str, Any] | str) -> 
     :param node_name: Unique identifier for this node (e.g. "proc_pz_001"). Must not
         already exist -- check with 'read_node_names' if unsure.
     :param class_name: The class this node belongs to (must already be defined)
+    :param module: ERP module this node belongs to, e.g. "Magazyn", "Sprzedaz",
+        "Ksiegowosc". REQUIRED -- this is what lets the assistant later narrow a search
+        to one module. Use the exact module name from the source document. Do NOT put
+        the module inside 'parameters' -- it is a system field, like the node's name.
     :param parameters: Dict of {parameter_name: value} matching the class's schema.
         Check the class's expected parameters with 'read_classes' first if unsure.
     :return: confirmation message, or an explanation of what went wrong (e.g. missing
@@ -1222,7 +1262,7 @@ def merge(node_name: str, class_name: str, parameters: dict[str, Any] | str) -> 
     params, error = _llm_passed_invalid_parameters(parameters)
     if error:
         return error
-    return knowledge_graph.merge(node_name, class_name, params)
+    return knowledge_graph.merge(node_name, class_name, module, params)
 
 @tool
 def edit_node_parameters(node_name: str, parameters: dict[str, Any] | str) -> str:
@@ -1274,7 +1314,7 @@ def define_relation(relation: str, parameters: dict[str, Any] | str | None = Non
     Call this ONCE per relation type, before using it in 'relationship'. If a relation
     type doesn't need any properties (e.g. a simple "ZNA" relation), just omit 'parameters'.
 
-    :param relation: Name of the relation type, e.g. "WYMAGA", "DOTYCZY", "NALEZY_DO"
+    :param relation: Name of the relation type, e.g. "WYMAGA", "DOTYCZY", "NALEŻY_DO"
         (automatically uppercased). Letters, digits, underscore only.
     :param parameters: Optional dict of {property_name: example_value} that every use
         of this relation should carry. Omit entirely if this relation has no properties.
@@ -1306,8 +1346,7 @@ def add_relation_parameters(relation: str, parameters: dict[str, Any] | str) -> 
     return knowledge_graph.add_relation_parameters(relation, params)
 
 @tool
-def relationship(from_node: str, to_nodes: list[str], relation: str,
-                 parameters: dict[str, Any] | str | None = None) -> str:
+def relationship(from_node: str, to_nodes: list[str], relation: str, parameters: dict[str, Any] | str | None = None) -> str:
     """
     Connects an EXISTING node ('from_node') to one or more other EXISTING nodes
     ('to_nodes') with a directed relationship of the given type. Both the relation type
@@ -1326,12 +1365,23 @@ def relationship(from_node: str, to_nodes: list[str], relation: str,
     :return: confirmation message per target, or an explanation of what went wrong
     """
 
+    targets, list_error = _llm_passed_invalid_list(to_nodes)
+
+    if list_error:
+        return list_error
+
+    if not targets:
+        return "BŁĄD: 'to_nodes' jest puste! Podaj co najmniej jeden istniejący node docelowy."
+
     if parameters is None:
         params, error = None, None
+
     else:
         params, error = _llm_passed_invalid_parameters(parameters)
+
     if error:
         return error
+
     return knowledge_graph.relationship(from_node, to_nodes, relation, params)
 
 @tool
@@ -1448,6 +1498,10 @@ def explore_neighbors(node_id: str, hops: int = 2, relation_types: list[str] | N
     if graph_driver is None:
         return "BŁĄD: Baza danych nie została zainicjalizowana."
 
+    types, list_error = _llm_passed_invalid_list(relation_types)
+    if list_error:
+        return list_error
+
     result = KnowledgeGraph.explore_neighbors(graph_driver, node_id, hops=hops, relation_types=relation_types)
     return _format_subgraph(result)
 
@@ -1473,6 +1527,8 @@ def find_path_between_nodes(from_node_id: str, to_node_id: str, max_hops: int = 
 
 graph_driver: Driver | None = None
 knowledge_graph: KnowledgeGraph | None = None
+embed_model: EmbedModel | None = None
+
 KNOWLEDGE_GRAPH_TOOLS = [
     # Klasy
     define_class,
@@ -1508,41 +1564,43 @@ KNOWLEDGE_GRAPH_TRAVERSE_TOOLS = [
     explore_neighbors,
     find_path_between_nodes
 ]
+PROMPTS_DIR = PROJECT_ROOT / "system"
 
 def build_graph_with_ollama(model: str, documents: str, system: str | None = None):
+    if knowledge_graph is None:
+        raise RuntimeError("Wywołaj 'initialize_knowledge_graph()' przed 'build_graph_with_ollama'")
+
     knowledge_graph.clear()
 
     if system is None:
-        with open("system/prompt_1_70826.md", "r", encoding="utf-8") as f:
-            system = f.read()
+        system = (PROMPTS_DIR / "prompt_2_80826.md").read_text(encoding="utf-8")
 
     llm = ChatModel(model=model,
                     system=system,
                     tools=KNOWLEDGE_GRAPH_TOOLS)
 
-    llm.pretty(documents, max_tool_iterations=1024)
+    llm.pretty(documents, max_tool_iterations=1024, think=False)
 
 def initialize_graph_driver():
     global graph_driver
 
     graph_driver = GraphDatabase.driver(GRAPH_DB_URL, auth=("neo4j", GRAPH_DB_PASSWORD))
 
-    # Jeżeli nie wywali bład, to znaczy, że działa
+    # Jeżeli nie wywali błąd, to znaczy, że działa
     try:
         graph_driver.verify_connectivity()
-
         print("OK: Połączenie z neo4j działa")
 
     except ServiceUnavailable as e:
-        print(f"BŁĄD: Nie można połączyć się z bazą: {e}")
+        raise RuntimeError(f"Nie można połączyć się z bazą pod {GRAPH_DB_URL}: {e}") from e
 
     except AuthError as e:
-        print(f"BŁĄD: Błędne dane logowania: {e}")
+        raise RuntimeError(f"Błędne dane logowania do neo4j (sprawdź GRAPH_DB_PASSWORD): {e}") from e
 
     except Exception as e:
-        print(f"BŁĄD: Inny nieoczekiwany błąd połączenia: {type(e).__name__}: {e}")
+        raise RuntimeError(f"Nieoczekiwany błąd połączenia z neo4j: {type(e).__name__}: {e}") from e
 
-    # Sprawdza, czy w bazie zainstalowane jest APOC
+    # sprawdza, czy w bazie zainstalowane jest APOC
     def is_apoc_available(driver: Driver, database: str = 'neo4j') -> bool:
         records, _, _ = driver.execute_query(
             "SHOW PROCEDURES YIELD name WHERE name STARTS WITH 'apoc.merge' RETURN count(*) AS n",
@@ -1567,7 +1625,7 @@ def initialize_knowledge_graph():
     knowledge_graph = KnowledgeGraph()
 
 def initialize_embed_model():
-    """Tworzy globalną instancję modelu embeddingów, używaną przez narzędzia wyszukiwania."""
+    """Tworzy globalną instancję modelu embedding, używaną przez narzędzia wyszukiwania."""
     global embed_model
     embed_model = EmbedModel(EMBED_MODEL)
 
@@ -1586,8 +1644,8 @@ def purge_database(driver: Driver, database: str = "neo4j", batch: int = 1024) -
 
 def print_graph(kg: KnowledgeGraph | None = None) -> None:
     """
-    Szybki podgląd całego grafu w konsoli -- klasy, relacje, etykiety, węzły
-    (z parametrami, relacjami i etykietami każdego z nich) -- bez potrzeby Neo4j,
+    szybki podgląd całego grafu w konsoli — klasy, relacje, etykiety, węzły
+    (z parametrami, relacjami i etykietami każdego z nich) — bez potrzeby Neo4j,
     czyta bezpośrednio z bufora w pamięci.
     """
 
@@ -1658,17 +1716,145 @@ def _format_path(path: list[dict[str, Any]] | None) -> str:
 def answer_with_ollama(model: str, question: str, system: str | None = None):
     """
     Uruchamia agenta odpowiadającego na pytania, korzystającego WYŁĄCZNIE z narzędzi
-    wyszukiwania (KNOWLEDGE_GRAPH_TRAVERSE_TOOLS) -- bez dostępu do zapisu grafu.
-    W przeciwieństwie do build_graph_with_ollama, NIE wymaga zainicjalizowanego
-    knowledge_graph (bufora budującego) -- tylko graph_driver i embed_model.
+    wyszukiwania (KNOWLEDGE_GRAPH_TRAVERSE_TOOLS) — bez dostępu do zapisu grafu.
+    W przeciwieństwie do build_graph_with_ollama NIE wymaga zainicjalizowanego
+    knowledge_graph (bufora budującego) — tylko graph_driver i embed_model.
     """
 
+    if graph_driver is None or embed_model is None:
+        raise RuntimeError("Wywołaj 'initialize_graph_driver()' i 'initialize_embed_model()' "
+                           "przed 'answer_with_ollama'")
+
     if system is None:
-        with open("system/q_prompt_0_70826.md", "r", encoding="utf-8") as f:
-            system = f.read()
+        system = (PROMPTS_DIR / "q_prompt_0_70826.md").read_text(encoding="utf-8")
 
     llm = ChatModel(model=model,
                     system=system,
                     tools=KNOWLEDGE_GRAPH_TRAVERSE_TOOLS)
 
     llm.pretty(message=question)
+
+GRAPHS_DIR = PROJECT_ROOT / "knowledge" / "graphs"
+GRAPH_FORMAT_VERSION = 1
+
+def _safe_filename_part(text: str) -> str:
+    """
+    Nazwa modelu zawiera dwukropek ('qwen3.5:9b'), który jest niedozwolony
+    w nazwach plików na Windows -- zamieniamy na myślnik.
+    """
+
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", text.strip())
+
+    return cleaned.strip("-.") or "unknown"
+
+def save_graph(model: str, kg: KnowledgeGraph | None = None, directory: Path | str | None = None,
+               with_embeddings: bool = False, embed_model: str | None = None) -> Path:
+    """
+    Zapisuje graf z pamięci do pliku JSON w 'knowledge/graphs/'. Nazwa pliku zawiera
+    datę, godzinę i model, którym graf zbudowano, np.:
+        2026-08-08_14-30-12_qwen3.5-9b.json
+
+    :param model: nazwa modelu LLM użytego do budowy grafu (trafia do nazwy pliku i metadanych)
+    :param kg: graf do zapisania (domyślnie globalny 'knowledge_graph')
+    :param directory: katalog docelowy (domyślnie 'knowledge/graphs/')
+    :param with_embeddings: czy zapisać wektory. Domyślnie NIE -- przy bge-m3 to 1024 liczby
+        na węzeł, co potrafi rozdąć plik do dziesiątek MB. Embeddingi i tak są przeliczane
+        od nowa przy 'sync()', więc do wersjonowania grafu nie są potrzebne.
+    :param embed_model: opcjonalna nazwa modelu embeddingów (tylko do metadanych)
+    :return: ścieżka zapisanego pliku
+    """
+
+    kg = kg or knowledge_graph
+    if kg is None:
+        raise RuntimeError("Brak grafu do zapisania -- wywołaj 'initialize_knowledge_graph()'")
+
+    directory = Path(directory) if directory else GRAPHS_DIR
+    directory.mkdir(parents=True, exist_ok=True)
+
+    now = datetime.now()
+    path = directory / f"{now:%Y-%m-%d_%H-%M-%S}_{_safe_filename_part(model)}.json"
+
+    nodes: dict[str, Any] = {}
+    embeddings_saved: int = 0
+
+    for node_name, node in kg.nodes.items():
+        entry: dict[str, Any] = {
+            "klasa": node.c_name,
+            "modul": node.module,
+            "parametry": node.c_parameters,
+            "etykiety": sorted(node.n_labels),
+            "relacje": {
+                relation: [{"target": edge.target, "parametry": edge.r_parameters} for edge in edges]
+                for relation, edges in node.n_relations.items()
+            },
+        }
+
+        if with_embeddings and node.embeddings is not None:
+            entry["embeddings"] = node.embeddings
+            embeddings_saved += 1
+
+        nodes[node_name] = entry
+
+    payload: dict[str, Any] = {
+        "meta": {
+            "format_version": GRAPH_FORMAT_VERSION,
+            "zapisano": now.isoformat(timespec="seconds"),
+            "model": model,
+            "embed_model": embed_model,
+            "liczba_klas": len(kg.classes),
+            "liczba_relacji": len(kg.relations),
+            "liczba_wezlow": len(kg.nodes),
+            "liczba_polaczen": sum(len(edges) for node in kg.nodes.values() for edges in node.n_relations.values()),
+            "embeddings_zapisane": embeddings_saved if with_embeddings else None,
+        },
+        "klasy": {name: schema.model_dump() for name, schema in kg.classes.items()},
+        "relacje": {name: schema.model_dump() for name, schema in kg.relations.items()},
+        "etykiety": sorted(kg.labels),
+        "wezly": nodes,
+    }
+
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    return path
+
+def load_graph(path: Path | str, set_global: bool = True) -> KnowledgeGraph:
+    """
+    Wczytuje graf zapisany przez 'save_graph'. Domyślnie podstawia go pod globalny
+    'knowledge_graph', żeby narzędzia i 'sync()' od razu na nim działały.
+
+    :param path: ścieżka do pliku JSON
+    :param set_global: czy podstawić wczytany graf jako globalny bufor
+    :return: wczytany graf
+    """
+
+    global knowledge_graph
+
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+
+    version = data.get("meta", {}).get("format_version")
+    if version != GRAPH_FORMAT_VERSION:
+        raise ValueError(f"Nieobsługiwana wersja formatu grafu: {version} "
+                         f"(oczekiwano {GRAPH_FORMAT_VERSION})")
+
+    kg = KnowledgeGraph()
+    kg.classes = {name: GraphClassSchema(**schema) for name, schema in data["klasy"].items()}
+    kg.relations = {name: RelationSchema(**schema) for name, schema in data["relacje"].items()}
+    kg.labels = set(data["etykiety"])
+
+    for node_name, entry in data["wezly"].items():
+        kg.nodes[node_name] = GraphNode(
+            c_name=entry["klasa"],
+            module=entry.get("modul", ""),
+            c_parameters=entry["parametry"],
+            n_labels=set(entry.get("etykiety", [])),
+            n_relations={
+                relation: [RelationEdge(target=e["target"], r_parameters=e["parametry"]) for e in edges]
+                for relation, edges in entry.get("relacje", {}).items()
+            },
+            embeddings=entry.get("embeddings"),
+        )
+
+    if set_global:
+        knowledge_graph = kg
+
+    return kg

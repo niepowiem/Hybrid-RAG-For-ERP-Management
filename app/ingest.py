@@ -5,8 +5,9 @@ from pathlib import Path
 from neo4j import Driver
 from pydantic import ValidationError
 
-from app.core import EMBED_MODEL, EmbedModel, EMBED_MODEL_DIM
-from app.graph import initialize_knowledge_graph, build_graph_with_ollama, print_graph, knowledge_graph
+from app import graph
+from app.core import EMBED_MODEL, EmbedModel, EMBED_MODEL_DIM, PROJECT_ROOT
+from app.graph import initialize_knowledge_graph, build_graph_with_ollama, print_graph
 from app.schema import Procedure, Error, Concept, KB_DATATYPE
 
 CATEGORY: dict[str, type[KB_DATATYPE]] = {
@@ -14,19 +15,16 @@ CATEGORY: dict[str, type[KB_DATATYPE]] = {
     "errors": Error,
     "concepts": Concept
 }
+KNOWLEDGE_DIR = PROJECT_ROOT / "knowledge"
 
-def load_knowledge(knowledge_directory: str | None = None) -> list[KB_DATATYPE]:
-    if knowledge_directory is None:
-        knowledge_directory = Path("../knowledge")
-
-    else:
-        knowledge_directory = Path(knowledge_directory)
+def load_knowledge(knowledge_directory: str | Path | None = None) -> list[KB_DATATYPE]:
+    directory = Path(knowledge_directory) if knowledge_directory else KNOWLEDGE_DIR
 
     documents: list[KB_DATATYPE] = []
     errors: int = 0
 
     for category, model in CATEGORY.items():
-        for file in sorted((knowledge_directory / category).rglob("*.y*ml")):
+        for file in sorted((directory / category).rglob("*.y*ml")):
             filedata = yaml.safe_load(file.read_text(encoding="utf-8"))
             if filedata is None:
                 continue
@@ -40,27 +38,39 @@ def load_knowledge(knowledge_directory: str | None = None) -> list[KB_DATATYPE]:
                     print(f"\nErr. in {file.name}, doc. {name}:\n{err}", file=sys.stderr)
                     errors += 1
     if errors:
-        raise SystemExit(f"{errors} error(s) in {knowledge_directory}")
+        raise SystemExit(f"{errors} error(s) in {directory}")
 
     return documents
 
-def check_for_duplicates(documents: list[KB_DATATYPE]):
+def check_for_duplicates(documents: list[KB_DATATYPE]) -> None:
     duplicates: list[KB_DATATYPE] = []
-    ids: list[str] = []
+    ids: set[str] = set()
 
     for document in documents:
         if document.id in ids:
             duplicates.append(document)
 
         else:
-            ids.append(document.id)
+            ids.add(document.id)
 
     if duplicates:
         for document in duplicates:
-            print(f"Duplicate id: {document.id}, {type(document)}")
+            print(f"Duplikat id: {document.id} ({type(document).__name__})", file=sys.stderr)
+
+        raise SystemExit(f"{len(duplicates)} zduplikowanych id w bazie wiedzy")
 
 def ingest_llm(driver: Driver, model:str):
     initialize_knowledge_graph()
+
+    # Pre-flight: sprawdzamy model embeddingów ZANIM zbudujemy graf. Inaczej błąd
+    # wyjdzie dopiero przy sync(), po kilkunastu minutach pracy modelu
+    embed = EmbedModel(EMBED_MODEL)
+    test_vector = embed.encode("test")[0]
+
+    if len(test_vector) != EMBED_MODEL_DIM:
+        raise RuntimeError(f"EMBED_MODEL_DIM={EMBED_MODEL_DIM}, ale model '{EMBED_MODEL}' "
+                           f"zwraca wektory o wymiarze {len(test_vector)}. Popraw .env.")
+
 
     documents = load_knowledge("./knowledge")
     check_for_duplicates(documents)
@@ -74,12 +84,14 @@ def ingest_llm(driver: Driver, model:str):
     build_graph_with_ollama(model=model, documents=document_string)
 
     print_graph()
+    saved_path = graph.save_graph(model=model, embed_model=EMBED_MODEL)
+    print(f"\nGraf zapisany: {saved_path}")
 
     input("[ENTER], aby zsynchronizować do bazy danych...")
 
-    result = knowledge_graph.sync(driver=driver,
-                                  embed_model=EmbedModel(EMBED_MODEL),
-                                  embed_dimensions=EMBED_MODEL_DIM)
+    result = graph.knowledge_graph.sync(driver=driver,
+                                        embed_model=embed,
+                                        embed_dimensions=EMBED_MODEL_DIM)
 
     print(result)
     print("\nGotowe!\nMożesz podglądać wyniki na: http://localhost:7474")

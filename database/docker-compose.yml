@@ -14,7 +14,7 @@ services:
 
   erp-assistant-graph-db:
     container_name: erp-assistant-graph-db
-    image: neo4j:5
+    image: neo4j:5.26
     ports:
       - "7474:7474"
       - "7687:7687"
