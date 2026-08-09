@@ -14,8 +14,10 @@
   steps:
     - text: Przejdź do Dokumenty w menu bocznym
       anchor: nav.documents
+      action: { kind: click }
     - text: Kliknij Nowy dokument
       anchor: btn.document-new
+      action: { kind: click }
     - text: W polu Typ dokumentu wybierz PZ
       anchor: field.document-type
       action: { kind: select, label: "PZ" }
@@ -28,8 +30,10 @@
       action: { kind: select, label: "MAG-GL" }
     - text: Przejdź na zakładkę Pozycje
       anchor: tab.lines
+      action: { kind: click }
     - text: Kliknij Dodaj pozycję
       anchor: btn.line-add
+      action: { kind: click }
     - text: Wybierz produkt z listy
       anchor: field.line-product
       action: { kind: select, label: "SR-M8-100" }
@@ -39,6 +43,7 @@
       action: { kind: fill, value: "100" }
     - text: Kliknij Zatwierdź dokument
       anchor: btn.document-confirm
+      action: { kind: click }
   verification: Dokument dostaje status Zatwierdzony, a stan produktu rośnie
   common_errors: [ERR-1003]
 
@@ -60,16 +65,30 @@
   steps:
     - text: Przejdź do Dokumenty i kliknij Nowy dokument
       anchor: btn.document-new
+      action: { kind: click }
     - text: W polu Typ dokumentu wybierz WZ
       anchor: field.document-type
-    - text: W polu Odbiorca wybierz kontrahenta
+      action: { kind: select, label: "WZ" }
+      note: Po zapisaniu typu nie da się zmienić
+    - text: W polu Odbiorca wybierz kontrahenta, do którego wydajesz towar
       anchor: field.counterparty
+      action: { kind: select, label: "Stalmex" }
     - text: W sekcji Magazyny wybierz Magazyn źródłowy
       anchor: field.warehouse-from
-    - text: Na zakładce Pozycje dodaj produkty i ilości
+      action: { kind: select, label: "MAG-GL" }
+    - text: Przejdź na zakładkę Pozycje
       anchor: tab.lines
+      action: { kind: click }
+    - text: Kliknij Dodaj pozycję
+      anchor: btn.line-add
+      action: { kind: click }
+    - text: Wybierz produkt i wpisz wydawaną ilość
+      anchor: field.line-quantity
+      action: { kind: fill, value: "10" }
+      note: Jeśli ilość przekroczy stan magazynu, dokument nie da się zatwierdzić
     - text: Kliknij Zatwierdź dokument
       anchor: btn.document-confirm
+      action: { kind: click }
   verification: Stan produktu w widoku Stany magazynowe maleje o wydaną ilość
   common_errors: [ERR-1004, ERR-1003]
 
@@ -89,17 +108,23 @@
   steps:
     - text: Przejdź do Dokumenty i kliknij Nowy dokument
       anchor: btn.document-new
+      action: { kind: click }
     - text: W polu Typ dokumentu wybierz MM
       anchor: field.document-type
+      action: { kind: select, label: "MM" }
     - text: W sekcji Magazyny wybierz Magazyn źródłowy
       anchor: field.warehouse-from
+      action: { kind: select, label: "MAG-GL" }
     - text: Wybierz inny Magazyn docelowy
       anchor: field.warehouse-to
+      action: { kind: select, label: "MAG-PROD" }
       note: Pole Kontrahent jest przy MM nieaktywne i to jest normalne
     - text: Na zakładce Pozycje dodaj produkty i kliknij Zapisz szkic
       anchor: btn.document-save
+      action: { kind: click }
     - text: Jako kierownik otwórz szkic i kliknij Zatwierdź dokument
       anchor: btn.document-confirm
+      action: { kind: click }
       note: Rolę zmienisz w panelu bocznym w polu Kontekst uprawnień
   verification: Stan maleje na magazynie źródłowym i rośnie na docelowym
   common_errors: [ERR-1005, ERR-3001]
@@ -118,9 +143,12 @@
   steps:
     - text: Przejdź do Stany magazynowe w menu bocznym
       anchor: nav.stock
+      action: { kind: click }
     - text: Wpisz indeks lub nazwę produktu w pole wyszukiwania
       anchor: field.filter-search
+      action: { kind: fill, value: "SR-M8-100" }
     - text: Aby zobaczyć tylko braki, zaznacz filtr tylko poniżej minimum
       anchor: field.filter-low
+      action: { kind: click }
       note: Ilość na czerwono oznacza stan poniżej minimum produktu
   verification: Tabela pokazuje ilość per magazyn wraz z jednostką i minimum

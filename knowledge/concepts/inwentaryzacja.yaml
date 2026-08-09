@@ -1,0 +1,22 @@
+- id: concept.inwentaryzacja
+  module: inwentaryzacja
+  title: Inwentaryzacja (spis z natury)
+  aliases: [spis z natury, remanent, liczenie magazynu, arkusz spisowy, różnice inwentaryzacyjne]
+  body: |
+    Inwentaryzacja to porównanie stanu fizycznego magazynu ze stanem
+    księgowym. W chwili otwarcia arkusza system zamraża stan księgowy jako
+    punkt odniesienia — dokumenty zatwierdzane w trakcie liczenia nie
+    przesuwają go, dzięki czemu wynik liczenia porównuje się zawsze z tą
+    samą wartością.
+
+    Arkusz ma dwie kolumny kluczowe: Stan księgowy (zamrożony snapshot)
+    i Policzono (ilość stwierdzona fizycznie). Różnica dodatnia to nadwyżka,
+    ujemna to niedobór. Puste pole Policzono znaczy, że pozycji jeszcze nie
+    liczono — to nie to samo co zero.
+
+    Cykl życia arkusza: Otwarta, potem Zamknięta. Zamknąć arkusz może tylko
+    kierownik i tylko wtedy, gdy wszystkie pozycje są policzone. Zamknięcie
+    jest nieodwracalne. Sam arkusz nie zmienia stanów magazynowych —
+    stwierdzone różnice koryguje się osobnymi dokumentami: PZ dla nadwyżek,
+    WZ dla niedoborów. Dla jednego magazynu może istnieć najwyżej jedna
+    otwarta inwentaryzacja naraz.

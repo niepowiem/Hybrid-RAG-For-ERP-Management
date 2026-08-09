@@ -1,0 +1,85 @@
+- id: proc.inwentaryzacja.rozpoczecie
+  title: Rozpoczęcie inwentaryzacji magazynu
+  module: inwentaryzacja
+  summary: Jak otworzyć arkusz spisu z natury dla wybranego magazynu i zamrozić stan księgowy.
+  query:
+    - jak zacząć inwentaryzację
+    - jak zrobić spis z natury
+    - nowy arkusz inwentaryzacji
+    - jak policzyć magazyn
+    - remanent jak rozpocząć
+  roles:
+    - magazynier
+    - kierownik
+  preconditions:
+    - Dla wybranego magazynu nie może istnieć inna otwarta inwentaryzacja
+  steps:
+    - text: Przejdź do Inwentaryzacja w menu bocznym
+      anchor: nav.stocktakes
+      action: { kind: click }
+    - text: Wybierz magazyn do policzenia z listy obok przycisku
+      anchor: field.stocktake-warehouse
+      action: { kind: select, label: "MAG-GL" }
+    - text: Kliknij Nowa inwentaryzacja
+      anchor: btn.stocktake-new
+      action: { kind: click }
+      note: System zapisuje stan księgowy z tej chwili jako punkt odniesienia — dokumenty zatwierdzane w trakcie liczenia nie zmienią arkusza
+  verification: Otwiera się arkusz z listą produktów i pustą kolumną Policzono
+  common_errors:
+    - ERR-4001
+
+- id: proc.inwentaryzacja.wprowadzenie-liczen
+  title: Wprowadzenie ilości policzonych do arkusza
+  module: inwentaryzacja
+  summary: Jak uzupełnić w arkuszu ilości policzone fizycznie i odczytać różnice inwentaryzacyjne.
+  query:
+    - jak wpisać policzone ilości
+    - gdzie wpisuję wyniki liczenia
+    - jak uzupełnić arkusz inwentaryzacji
+    - różnice inwentaryzacyjne skąd się biorą
+  roles:
+    - magazynier
+    - kierownik
+  preconditions:
+    - Arkusz inwentaryzacji musi być otwarty
+  steps:
+    - text: Otwórz arkusz klikając jego numer na liście inwentaryzacji
+      anchor: table.stocktakes
+      note: Otwarte arkusze mają status Otwarta
+    - text: Dla każdej pozycji wpisz ilość policzoną fizycznie w kolumnie Policzono
+      anchor: field.count-input
+      note: Wartość zapisuje się po opuszczeniu pola — możesz przechodzić Tabem przez kolejne wiersze
+    - text: Sprawdź kolumnę Różnica — nadwyżki na zielono, niedobory na czerwono
+      anchor: table.stocktake-lines
+      note: Zero oznacza zgodność stanu fizycznego z księgowym; licznik różnic pokazuje się też w nagłówku arkusza
+  verification: Licznik w nagłówku pokazuje policzone wszystkie pozycje, np. 4 / 4
+  common_errors:
+    - ERR-4004
+
+- id: proc.inwentaryzacja.zamkniecie
+  title: Zamknięcie inwentaryzacji przez kierownika
+  module: inwentaryzacja
+  summary: Jak zamknąć w pełni policzony arkusz i co dzieje się z różnicami po zamknięciu.
+  query:
+    - jak zamknąć inwentaryzację
+    - jak zakończyć spis z natury
+    - kto zamyka inwentaryzację
+    - co zrobić z różnicami inwentaryzacyjnymi
+  roles:
+    - kierownik
+  preconditions:
+    - Wszystkie pozycje arkusza muszą mieć wpisaną ilość policzoną
+    - Zamknąć arkusz może wyłącznie kierownik
+  steps:
+    - text: Otwórz arkusz inwentaryzacji z listy
+      anchor: table.stocktakes
+    - text: Upewnij się, że licznik w nagłówku pokazuje komplet policzonych pozycji, np. policzono 4/4
+      note: Przy brakach system odmówi zamknięcia i wskaże, ile pozycji zostało
+    - text: W stopce arkusza kliknij Zamknij inwentaryzację
+      anchor: btn.stocktake-close
+      action: { kind: click }
+      note: Rolę zmienisz w panelu bocznym w polu Kontekst uprawnień
+  verification: Status arkusza zmienia się na Zamknięta, a arkusz staje się tylko do odczytu
+  common_errors:
+    - ERR-4002
+    - ERR-4003

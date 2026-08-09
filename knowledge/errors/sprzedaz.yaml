@@ -1,0 +1,52 @@
+- id: ERR-7001
+  module: sprzedaz
+  query: Nie można potwierdzić zamówienia bez pozycji.
+  causes:
+    - Zamówienie nie ma żadnej pozycji z produktem i ilością
+  solutions:
+    - solution:
+        - Otwórz zamówienie i dodaj co najmniej jedną pozycję z produktem i ilością
+        - W prototypie edytuje się tylko szkic — utwórz zamówienie od nowa, jeśli trzeba
+      ref:
+        - proc.sprzedaz.utworzenie-zamowienia
+
+- id: ERR-7002
+  module: sprzedaz
+  query: Odbiorca jest nieaktywny — nie można potwierdzić dla niego zamówienia.
+  causes:
+    - Kontrahent został dezaktywowany w kartotece po utworzeniu zamówienia
+  solutions:
+    - solution:
+        - Wybierz innego, aktywnego odbiorcę
+        - Jeśli odbiorca powinien być aktywny, sprawdź jego status w kartotece Kontrahenci
+      ref:
+        - proc.sprzedaz.utworzenie-zamowienia
+
+- id: ERR-7003
+  module: sprzedaz
+  query: Ta operacja nie jest dostępna w bieżącym statusie zamówienia sprzedaży.
+  causes:
+    - Potwierdzić można tylko zamówienie w statusie Szkic
+    - Zrealizować można tylko zamówienie w statusie Potwierdzone
+    - Zamówienie zrealizowane jest zamknięte i nie obsługuje żadnych operacji
+  solutions:
+    - solution:
+        - Sprawdź status zamówienia na liście
+        - Szkic najpierw potwierdź, dopiero potwierdzone zamówienie zrealizujesz
+      ref:
+        - proc.sprzedaz.potwierdzenie-zamowienia
+        - proc.sprzedaz.realizacja-zamowienia
+
+- id: ERR-7004
+  module: sprzedaz
+  query: Nie można zrealizować zamówienia — na magazynie brakuje towaru na co najmniej jednej pozycji.
+  causes:
+    - Zamawiana ilość przekracza aktualny stan magazynowy produktu
+    - Stan zmienił się od potwierdzenia zamówienia, bo inny dokument wydał ten produkt
+  solutions:
+    - solution:
+        - Sprawdź aktualne stany w widoku Stany magazynowe
+        - Domów brakujący towar zamówieniem zakupu albo zmniejsz ilość na zamówieniu
+      ref:
+        - proc.magazyn.sprawdzenie-stanu
+        - proc.zakupy.utworzenie-zamowienia

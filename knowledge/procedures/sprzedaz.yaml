@@ -1,0 +1,114 @@
+- id: proc.sprzedaz.utworzenie-zamowienia
+  title: Utworzenie zamówienia sprzedaży
+  module: sprzedaz
+  summary: Jak przygotować zamówienie od klienta z pozycjami, cenami i terminem realizacji.
+  query:
+    - jak utworzyć zamówienie sprzedaży
+    - klient chce zamówić towar
+    - jak zrobić zs
+    - nowe zamówienie od klienta
+    - jak przyjąć zamówienie klienta
+  roles:
+    - magazynier
+    - kierownik
+  steps:
+    - text: Przejdź do Zamówienia sprzedaży w menu bocznym
+      anchor: nav.sales-orders
+      action: { kind: click }
+    - text: Kliknij Nowe zamówienie
+      anchor: btn.so-new
+      action: { kind: click }
+    - text: W polu Odbiorca wybierz klienta, który składa zamówienie
+      anchor: field.so-customer
+      action: { kind: select, label: "Metalpol" }
+      note: Lista pokazuje tylko odbiorców — dostawcy są ukryci
+    - text: W polu Magazyn wydania wybierz, z którego magazynu zejdzie towar
+      anchor: field.so-warehouse
+      action: { kind: select, label: "MAG-GL" }
+    - text: Ustaw oczekiwaną datę realizacji
+      anchor: field.so-expected-date
+      action: { kind: fill, value: "2026-08-20" }
+    - text: W sekcji Dodatkowe możesz wpisać uwagi widoczne na potwierdzeniu dla klienta
+      anchor: field.so-notes
+    - text: W stopce karty Pozycje kliknij Dodaj pozycję
+      anchor: btn.so-line-add
+      action: { kind: click }
+    - text: Wybierz produkt z listy
+      anchor: field.so-line-product
+      action: { kind: select, label: "SR-M8-100" }
+      note: Cena podpowiada się z kartoteki, ale możesz ją nadpisać ceną z negocjacji
+    - text: Wpisz zamawianą ilość
+      anchor: field.so-line-quantity
+      action: { kind: fill, value: "400" }
+    - text: Sprawdź wiersz Razem netto w stopce tabeli pozycji
+      anchor: table.so-lines
+    - text: Kliknij Zapisz zamówienie w stopce karty
+      anchor: btn.so-save
+      action: { kind: click }
+  verification: Zamówienie dostaje numer ZS i status Szkic, otwiera się jego podgląd
+  common_errors:
+    - ERR-7001
+
+- id: proc.sprzedaz.potwierdzenie-zamowienia
+  title: Potwierdzenie zamówienia sprzedaży
+  module: sprzedaz
+  summary: Jak potwierdzić szkic zamówienia klienta i zablokować go do realizacji.
+  query:
+    - jak potwierdzić zamówienie sprzedaży
+    - jak zatwierdzić zs
+    - zamówienie klienta do realizacji
+    - potwierdzenie zamówienia
+  roles:
+    - magazynier
+    - kierownik
+  preconditions:
+    - Zamówienie musi być w statusie Szkic
+    - Zamówienie musi mieć co najmniej jedną pozycję
+    - Odbiorca musi być aktywny w kartotece kontrahentów
+  steps:
+    - text: Przejdź do Zamówienia sprzedaży i otwórz szkic klikając jego numer
+      anchor: table.sales-orders
+    - text: Sprawdź pozycje i wiersz Razem netto w stopce tabeli
+      anchor: table.so-lines
+      note: Po potwierdzeniu zamówienia nie da się już edytować
+    - text: W stopce karty Pozycje kliknij Potwierdź zamówienie
+      anchor: btn.so-confirm
+      action: { kind: click }
+  verification: Status zamówienia zmienia się na Potwierdzone
+  common_errors:
+    - ERR-7001
+    - ERR-7002
+    - ERR-7003
+
+- id: proc.sprzedaz.realizacja-zamowienia
+  title: Realizacja zamówienia sprzedaży dokumentem WZ
+  module: sprzedaz
+  summary: Jak zrealizować potwierdzone zamówienie klienta i utworzyć z niego szkic WZ.
+  query:
+    - jak zrealizować zamówienie sprzedaży
+    - jak wydać towar z zamówienia
+    - jak zrobić wz z zamówienia
+    - realizacja zamówienia klienta
+    - wysyłka towaru do klienta
+  roles:
+    - magazynier
+    - kierownik
+  preconditions:
+    - Zamówienie musi być w statusie Potwierdzone
+    - Na magazynie wydania musi być wystarczająca ilość każdego produktu
+  steps:
+    - text: Przejdź do Zamówienia sprzedaży i otwórz zamówienie w statusie Potwierdzone
+      anchor: table.sales-orders
+    - text: W stopce karty Pozycje kliknij Zrealizuj (utwórz WZ)
+      anchor: btn.so-fulfil
+      action: { kind: click }
+      note: System sprawdza stany i tworzy szkic WZ z pozycjami zamówienia, po czym przenosi Cię do niego — numer zamówienia trafia w pole Numer obcy. Później wrócisz do WZ przyciskiem Pokaż dokument WZ
+    - text: W szkicu WZ zweryfikuj ilości i zatwierdź dokument
+      anchor: btn.document-confirm
+      action: { kind: click }
+      note: Dopiero zatwierdzenie WZ zmniejsza stany magazynowe — sama realizacja jeszcze nie
+  verification: Zamówienie ma status Zrealizowane, a stan produktów maleje po zatwierdzeniu WZ
+  common_errors:
+    - ERR-7003
+    - ERR-7004
+    - ERR-1004

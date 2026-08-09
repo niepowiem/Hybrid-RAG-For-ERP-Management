@@ -6,7 +6,7 @@ import httpx
 from typing import Any, Iterator, Callable, Iterable
 
 from dotenv import load_dotenv
-from langchain.tools import BaseTool
+from langchain_core.tools import BaseTool
 
 load_dotenv()
 

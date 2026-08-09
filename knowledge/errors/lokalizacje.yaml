@@ -1,0 +1,24 @@
+- id: ERR-6001
+  module: lokalizacje
+  query: Lokalizacja o tym kodzie już istnieje w wybranym magazynie.
+  causes:
+    - Kod lokalizacji musi być unikalny w obrębie magazynu, a podany kod jest już zajęty
+  solutions:
+    - solution:
+        - Użyj innego kodu, np. kolejnego wolnego numeru na tym regale
+        - Jeśli chcesz użyć istniejącej lokalizacji, odszukaj ją na liście zamiast tworzyć nową
+      ref:
+        - proc.lokalizacje.wyszukanie-lokalizacji
+
+- id: ERR-6002
+  module: lokalizacje
+  query: Nie można dezaktywować lokalizacji, która występuje na pozycjach dokumentów.
+  causes:
+    - Pozycje istniejących dokumentów wskazują tę lokalizację jako miejsce składowania
+    - System chroni historię ruchów magazynowych przed osieroceniem
+  solutions:
+    - solution:
+        - Zostaw lokalizację aktywną i po prostu przestań jej używać na nowych dokumentach
+        - Przenieś towar na inną lokalizację dokumentem MM, jeśli regał jest fizycznie wycofywany
+      ref:
+        - proc.magazyn.przesuniecie-mm
