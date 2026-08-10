@@ -18,6 +18,8 @@ import {
   CreateSalesOrderSchema,
   DOC_TYPE_LABELS,
   ROLES,
+  CreateCounterpartySchema,
+  CreateProductSchema,
 } from "@demo-erp/shared";
 import type { ApiErrorBody, Document, Role } from "@demo-erp/shared";
 import {
@@ -102,6 +104,92 @@ export function registerRoutes(app: FastifyInstance): void {
   app.get("/api/products", async () => products);
   app.get("/api/warehouses", async () => warehouses);
   app.get("/api/counterparties", async () => counterparties);
+
+  // ============================== KARTOTEKI ================================
+  // Wzorzec jak przy lokalizacjach: tworzenie z kontrolą duplikatu, wyłączanie
+  // przełącznikiem z blokadą, gdy rekord jest już użyty w obrocie.
+
+  app.post("/api/products", async (req) => {
+    const input = CreateProductSchema.parse(req.body);
+
+    const duplikat = products.find(
+        (p) => p.sku.toLowerCase() === input.sku.trim().toLowerCase(),
+    );
+    if (duplikat) {
+      throw new AppError("ERR-8001", { sku: input.sku, existingProductId: duplikat.id });
+    }
+
+    const product = {
+      id: nextId(),
+      ...input,
+      sku: input.sku.trim().toUpperCase(),
+      name: input.name.trim(),
+      active: true,
+    };
+    products.push(product);
+    return product;
+  });
+
+  app.post("/api/products/:id/toggle", async (req) => {
+    const { id } = req.params as { id: string };
+    const product = products.find((p) => p.id === id);
+    if (!product) throw new AppError("ERR-1001", { productId: id });
+
+    if (product.active) {
+      // Wycofanie tylko wtedy, gdy indeks nie występuje nigdzie w obrocie.
+      const uzyty =
+          documents.some((d) => d.lines.some((l) => l.productId === product.id)) ||
+          purchaseOrders.some((o) => o.lines.some((l) => l.productId === product.id)) ||
+          salesOrders.some((o) => o.lines.some((l) => l.productId === product.id)) ||
+          purchaseInvoices.some((i) => i.lines.some((l) => l.productId === product.id)) ||
+          stocktakes.some((s) => s.lines.some((l) => l.productId === product.id));
+
+      if (uzyty) throw new AppError("ERR-8002", { sku: product.sku });
+    }
+
+    product.active = !product.active;
+    return product;
+  });
+
+  app.post("/api/counterparties", async (req) => {
+    const input = CreateCounterpartySchema.parse(req.body);
+
+    const duplikat = counterparties.find(
+        (c) => c.code.toLowerCase() === input.code.trim().toLowerCase(),
+    );
+    if (duplikat) {
+      throw new AppError("ERR-8101", { code: input.code, existingCounterpartyId: duplikat.id });
+    }
+
+    const counterparty = {
+      id: nextId(),
+      ...input,
+      code: input.code.trim().toUpperCase(),
+      name: input.name.trim(),
+      active: true,
+    };
+    counterparties.push(counterparty);
+    return counterparty;
+  });
+
+  app.post("/api/counterparties/:id/toggle", async (req) => {
+    const { id } = req.params as { id: string };
+    const counterparty = counterparties.find((c) => c.id === id);
+    if (!counterparty) throw new AppError("ERR-1001", { counterpartyId: id });
+
+    if (counterparty.active) {
+      const uzyty =
+          documents.some((d) => d.counterpartyId === counterparty.id) ||
+          purchaseOrders.some((o) => o.supplierId === counterparty.id) ||
+          salesOrders.some((o) => o.customerId === counterparty.id) ||
+          purchaseInvoices.some((i) => i.supplierId === counterparty.id);
+
+      if (uzyty) throw new AppError("ERR-8102", { code: counterparty.code });
+    }
+
+    counterparty.active = !counterparty.active;
+    return counterparty;
+  });
   app.get("/api/stock", async () => stockLevels());
 
   app.get("/api/documents", async () =>

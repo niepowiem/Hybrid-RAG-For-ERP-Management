@@ -8,46 +8,65 @@
     - jak zrobić zs
     - nowe zamówienie od klienta
     - jak przyjąć zamówienie klienta
-  roles:
-    - magazynier
-    - kierownik
+  roles: [magazynier, kierownik]
+  goal: [zs.zapisane]
   steps:
     - text: Przejdź do Zamówienia sprzedaży w menu bocznym
       anchor: nav.sales-orders
       action: { kind: click }
+      provides: [ekran.zamowienia-sprzedazy]
     - text: Kliknij Nowe zamówienie
       anchor: btn.so-new
       action: { kind: click }
+      requires: [ekran.zamowienia-sprzedazy]
+      provides: [zs.nowe]
     - text: W polu Odbiorca wybierz klienta, który składa zamówienie
       anchor: field.so-customer
       action: { kind: select, label: "Metalpol" }
+      requires: [zs.nowe]
+      provides: [zs.odbiorca]
       note: Lista pokazuje tylko odbiorców — dostawcy są ukryci
     - text: W polu Magazyn wydania wybierz, z którego magazynu zejdzie towar
       anchor: field.so-warehouse
       action: { kind: select, label: "MAG-GL" }
+      requires: [zs.nowe]
+      provides: [zs.magazyn]
     - text: Ustaw oczekiwaną datę realizacji
       anchor: field.so-expected-date
       action: { kind: fill, value: "2026-08-20" }
+      requires: [zs.nowe]
+      provides: [zs.data-realizacji]
     - text: W sekcji Dodatkowe możesz wpisać uwagi widoczne na potwierdzeniu dla klienta
       anchor: field.so-notes
+      requires: [zs.nowe]
+      provides: [zs.uwagi]
     - text: W stopce karty Pozycje kliknij Dodaj pozycję
       anchor: btn.so-line-add
       action: { kind: click }
+      requires: [zs.nowe]
+      provides: [zs.pozycja-nowa]
     - text: Wybierz produkt z listy
       anchor: field.so-line-product
       action: { kind: select, label: "SR-M8-100" }
+      requires: [zs.pozycja-nowa]
+      provides: [zs.pozycja-produkt]
       note: Cena podpowiada się z kartoteki, ale możesz ją nadpisać ceną z negocjacji
     - text: Wpisz zamawianą ilość
       anchor: field.so-line-quantity
       action: { kind: fill, value: "400" }
+      requires: [zs.pozycja-produkt]
+      provides: [zs.pozycja-ilosc]
     - text: Sprawdź wiersz Razem netto w stopce tabeli pozycji
       anchor: table.so-lines
+      requires: [zs.pozycja-ilosc]
+      provides: [zs.pozycje-sprawdzone]
     - text: Kliknij Zapisz zamówienie w stopce karty
       anchor: btn.so-save
       action: { kind: click }
+      requires: [zs.data-realizacji, zs.magazyn, zs.odbiorca, zs.pozycja-ilosc]
+      provides: [zs.zapisane]
   verification: Zamówienie dostaje numer ZS i status Szkic, otwiera się jego podgląd
-  common_errors:
-    - ERR-7001
+  common_errors: [ERR-7001]
 
 - id: proc.sprzedaz.potwierdzenie-zamowienia
   title: Potwierdzenie zamówienia sprzedaży
@@ -58,27 +77,33 @@
     - jak zatwierdzić zs
     - zamówienie klienta do realizacji
     - potwierdzenie zamówienia
-  roles:
-    - magazynier
-    - kierownik
+  roles: [magazynier, kierownik]
   preconditions:
     - Zamówienie musi być w statusie Szkic
     - Zamówienie musi mieć co najmniej jedną pozycję
     - Odbiorca musi być aktywny w kartotece kontrahentów
+  goal: [zs.potwierdzone]
   steps:
-    - text: Przejdź do Zamówienia sprzedaży i otwórz szkic klikając jego numer
+    - text: Przejdź do Zamówienia sprzedaży w menu bocznym
+      anchor: nav.sales-orders
+      action: { kind: click }
+      provides: [ekran.zamowienia-sprzedazy]
+    - text: Otwórz szkic zamówienia klikając jego numer na liście
       anchor: table.sales-orders
+      requires: [ekran.zamowienia-sprzedazy, zs.zapisane]
+      provides: [zs.otwarte-szkic]
     - text: Sprawdź pozycje i wiersz Razem netto w stopce tabeli
       anchor: table.so-lines
+      requires: [zs.otwarte-szkic]
+      provides: [zs.pozycje-zweryfikowane]
       note: Po potwierdzeniu zamówienia nie da się już edytować
     - text: W stopce karty Pozycje kliknij Potwierdź zamówienie
       anchor: btn.so-confirm
       action: { kind: click }
+      requires: [zs.otwarte-szkic]
+      provides: [zs.potwierdzone]
   verification: Status zamówienia zmienia się na Potwierdzone
-  common_errors:
-    - ERR-7001
-    - ERR-7002
-    - ERR-7003
+  common_errors: [ERR-7001, ERR-7002, ERR-7003]
 
 - id: proc.sprzedaz.realizacja-zamowienia
   title: Realizacja zamówienia sprzedaży dokumentem WZ
@@ -90,25 +115,208 @@
     - jak zrobić wz z zamówienia
     - realizacja zamówienia klienta
     - wysyłka towaru do klienta
-  roles:
-    - magazynier
-    - kierownik
+  roles: [magazynier, kierownik]
   preconditions:
     - Zamówienie musi być w statusie Potwierdzone
     - Na magazynie wydania musi być wystarczająca ilość każdego produktu
+  goal: [zs.zrealizowane]
   steps:
-    - text: Przejdź do Zamówienia sprzedaży i otwórz zamówienie w statusie Potwierdzone
+    - text: Przejdź do Zamówienia sprzedaży w menu bocznym
+      anchor: nav.sales-orders
+      action: { kind: click }
+      provides: [ekran.zamowienia-sprzedazy]
+    - text: Otwórz zamówienie w statusie Potwierdzone klikając jego numer na liście
       anchor: table.sales-orders
+      requires: [ekran.zamowienia-sprzedazy, zs.potwierdzone]
+      provides: [zs.otwarte-potwierdzone]
     - text: W stopce karty Pozycje kliknij Zrealizuj (utwórz WZ)
       anchor: btn.so-fulfil
       action: { kind: click }
+      requires: [zs.otwarte-potwierdzone]
+      provides: [dokument.szkic-wz]
       note: System sprawdza stany i tworzy szkic WZ z pozycjami zamówienia, po czym przenosi Cię do niego — numer zamówienia trafia w pole Numer obcy. Później wrócisz do WZ przyciskiem Pokaż dokument WZ
     - text: W szkicu WZ zweryfikuj ilości i zatwierdź dokument
       anchor: btn.document-confirm
       action: { kind: click }
+      requires: [dokument.szkic-wz]
+      provides: [dokument.typ-wz, dokument.zatwierdzony, zs.zrealizowane]
       note: Dopiero zatwierdzenie WZ zmniejsza stany magazynowe — sama realizacja jeszcze nie
   verification: Zamówienie ma status Zrealizowane, a stan produktów maleje po zatwierdzeniu WZ
-  common_errors:
-    - ERR-7003
-    - ERR-7004
-    - ERR-1004
+  common_errors: [ERR-7003, ERR-7004, ERR-1004]
+
+- id: proc.sprzedaz.wyszukanie-kontrahenta
+  title: Wyszukanie kontrahenta w kartotece
+  module: sprzedaz
+  summary: Jak znaleźć dostawcę lub odbiorcę po nazwie, kodzie albo numerze NIP i sprawdzić, czy jest aktywny.
+  query:
+    - gdzie sprawdzę kontrahenta
+    - jak znaleźć dostawcę
+    - jak znaleźć odbiorcę
+    - szukanie po nip
+    - czy kontrahent jest aktywny
+    - jak dodać kontrahenta
+  roles: [magazynier, kierownik]
+  goal: [kontrahent.znaleziony]
+  steps:
+    - text: Przejdź do Kontrahenci w menu bocznym
+      anchor: nav.counterparties
+      action: { kind: click }
+      provides: [ekran.kontrahenci]
+    - text: Wpisz nazwę, kod lub NIP w pole wyszukiwania
+      anchor: field.counterparty-search
+      action: { kind: fill, value: "Stalmex" }
+      requires: [ekran.kontrahenci]
+      provides: [kontrahent.wyszukany]
+    - text: Sprawdź w tabeli rodzaj i status kontrahenta
+      anchor: table.counterparties
+      requires: [kontrahent.wyszukany]
+      provides: [kontrahent.znaleziony]
+      note: Nieaktywny kontrahent nie pojawi się na liście wyboru w dokumentach
+  verification: Wyszukanie kontrahenta w kartotece
+
+- id: proc.sprzedaz.status-zamowienia
+  title: Sprawdzenie statusu zamówienia sprzedaży
+  module: sprzedaz
+  summary: Gdzie zobaczyć, czy zamówienie klienta jest jeszcze szkicem, czy już potwierdzone albo zrealizowane.
+  query:
+    - na jakim etapie jest zamówienie
+    - status zamówienia klienta
+    - czy zamówienie zostało zrealizowane
+    - lista zamówień sprzedaży
+    - ile jest warte zamówienie
+  roles: [magazynier, kierownik]
+  goal: [zs.status-sprawdzony]
+  steps:
+    - text: Przejdź do Zamówienia sprzedaży w menu bocznym
+      anchor: nav.sales-orders
+      action: { kind: click }
+      provides: [ekran.zamowienia-sprzedazy]
+    - text: Odczytaj kolumnę Status przy właściwym numerze zamówienia
+      anchor: table.sales-orders
+      requires: [ekran.zamowienia-sprzedazy]
+      provides: [zs.status-sprawdzony]
+      note: Szkic, Potwierdzone i Zrealizowane to trzy kolejne etapy cyklu zamówienia
+  verification: Sprawdzenie statusu zamówienia sprzedaży
+
+- id: proc.sprzedaz.podglad-wz-z-zamowienia
+  title: Przejście z zamówienia sprzedaży do utworzonego dokumentu WZ
+  module: sprzedaz
+  summary: Jak wrócić do dokumentu WZ powstałego z realizacji zamówienia klienta.
+  query:
+    - gdzie jest wz z zamówienia
+    - jak wrócić do dokumentu wz
+    - gdzie poszedł dokument z realizacji
+    - jak znaleźć wz utworzony z zamówienia
+    - zgubiłem szkic wz
+  roles: [magazynier, kierownik]
+  preconditions:
+    - Zamówienie musi mieć status Zrealizowane
+  goal: [zs.dokument-otwarty]
+  steps:
+    - text: Przejdź do Zamówienia sprzedaży w menu bocznym
+      anchor: nav.sales-orders
+      action: { kind: click }
+      provides: [ekran.zamowienia-sprzedazy]
+    - text: Otwórz zamówienie w statusie Zrealizowane klikając jego numer na liście
+      anchor: table.sales-orders
+      requires: [ekran.zamowienia-sprzedazy, zs.zrealizowane]
+      provides: [zs.otwarte-zrealizowane]
+    - text: W stopce karty Pozycje kliknij Pokaż dokument WZ
+      anchor: btn.so-show-document
+      action: { kind: click }
+      requires: [zs.otwarte-zrealizowane]
+      provides: [zs.dokument-otwarty]
+      note: Przycisk pojawia się dopiero po zrealizowaniu zamówienia
+  verification: Otwiera się dokument WZ powstały z tego zamówienia
+
+- id: proc.sprzedaz.dodanie-kontrahenta
+  title: Dodanie nowego kontrahenta do kartoteki
+  module: sprzedaz
+  summary: Jak założyć dostawcę lub odbiorcę, żeby dało się go wybrać na dokumencie albo zamówieniu.
+  query:
+    - jak dodać kontrahenta
+    - nowy dostawca
+    - nowy odbiorca
+    - jak dodać klienta
+    - jak założyć kartotekę kontrahenta
+    - nie ma mojego dostawcy na liście
+  roles: [magazynier, kierownik]
+  goal: [kontrahent.zapisany]
+  steps:
+    - text: Przejdź do Kontrahenci w menu bocznym
+      anchor: nav.counterparties
+      action: { kind: click }
+      provides: [ekran.kontrahenci]
+    - text: Kliknij Nowy kontrahent
+      anchor: btn.counterparty-new
+      action: { kind: click }
+      requires: [ekran.kontrahenci]
+      provides: [kontrahent.formularz]
+    - text: Wpisz kod kontrahenta
+      anchor: field.counterparty-code
+      action: { kind: fill, value: "DOS-003" }
+      requires: [kontrahent.formularz]
+      provides: [kontrahent.kod]
+      note: Kod musi być unikalny w kartotece
+    - text: Wpisz pełną nazwę kontrahenta
+      anchor: field.counterparty-name
+      action: { kind: fill, value: "Hurtownia Stalowa Sp. z o.o." }
+      requires: [kontrahent.formularz]
+      provides: [kontrahent.nazwa]
+    - text: "Wybierz rodzaj: dostawca, odbiorca albo oba"
+      anchor: field.counterparty-kind
+      action: { kind: select, label: "Dostawca" }
+      requires: [kontrahent.formularz]
+      provides: [kontrahent.rodzaj]
+      note: Dostawcy pojawiają się na PZ i zamówieniach zakupu, odbiorcy na WZ i zamówieniach sprzedaży
+    - text: Wpisz NIP
+      anchor: field.counterparty-taxid
+      action: { kind: fill, value: "6431234567" }
+      requires: [kontrahent.formularz]
+      provides: [kontrahent.nip]
+      note: Dokładnie dziesięć cyfr, bez myślników
+    - text: Wpisz miejscowość
+      anchor: field.counterparty-city
+      action: { kind: fill, value: "Katowice" }
+      requires: [kontrahent.formularz]
+      provides: [kontrahent.miasto]
+    - text: W stopce formularza kliknij Zapisz kontrahenta
+      anchor: btn.counterparty-save
+      action: { kind: click }
+      requires: [kontrahent.kod, kontrahent.miasto, kontrahent.nazwa, kontrahent.nip, kontrahent.rodzaj]
+      provides: [kontrahent.zapisany]
+  verification: Dodanie nowego kontrahenta do kartoteki
+  common_errors: [ERR-8101]
+
+- id: proc.sprzedaz.dezaktywacja-kontrahenta
+  title: Dezaktywacja kontrahenta
+  module: sprzedaz
+  summary: Jak wyłączyć kontrahenta z użycia, żeby przestał się pojawiać na listach wyboru w dokumentach.
+  query:
+    - jak dezaktywować kontrahenta
+    - kontrahent zakończył działalność
+    - jak usunąć dostawcę
+    - nie chcę już współpracować z tym klientem
+    - jak aktywować kontrahenta z powrotem
+  roles: [magazynier, kierownik]
+  preconditions:
+    - Kontrahent nie może występować na dokumentach, zamówieniach ani fakturach
+  goal: [kontrahent.dezaktywowany]
+  steps:
+    - text: Przejdź do Kontrahenci w menu bocznym
+      anchor: nav.counterparties
+      action: { kind: click }
+      provides: [ekran.kontrahenci]
+    - text: Znajdź kontrahenta wpisując nazwę, kod lub NIP
+      anchor: field.counterparty-search
+      action: { kind: fill, value: "Stalmex" }
+      requires: [ekran.kontrahenci]
+      provides: [kontrahent.wyszukany]
+    - text: Kliknij Dezaktywuj w wierszu kontrahenta
+      anchor: btn.counterparty-toggle
+      action: { kind: click }
+      requires: [kontrahent.wyszukany]
+      provides: [kontrahent.dezaktywowany]
+      note: Ten sam przycisk aktywuje kontrahenta z powrotem
+  verification: Dezaktywacja kontrahenta
+  common_errors: [ERR-8102]

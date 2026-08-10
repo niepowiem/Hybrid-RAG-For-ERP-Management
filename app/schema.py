@@ -7,6 +7,9 @@ class ProcedureStep(BaseModel):
     anchor: str | None = None
     action: dict[str, Any] | None = None
     note: str | None = None
+    optional: bool = False
+    requires: list[str] = []
+    provides: list[str] = []
 
 class Procedure(BaseModel):
     id: str
@@ -19,6 +22,7 @@ class Procedure(BaseModel):
     steps: list[ProcedureStep] = Field(min_length=1)
     verification: str | None = None
     common_errors: list[str] = []
+    goal: list[str] = []
 
     @field_validator("id")
     @classmethod

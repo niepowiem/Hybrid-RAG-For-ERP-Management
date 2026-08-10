@@ -1,0 +1,63 @@
+- id: ERR-8001
+  module: magazyn
+  query: Produkt o tym indeksie już istnieje
+  causes:
+    - W kartotece jest już produkt o takim samym indeksie (SKU), być może wycofany i niewidoczny na liście
+    - Indeks wpisano z inną wielkością liter, ale system porównuje je bez rozróżniania
+  solutions:
+    - solution:
+        - Odznacz filtr pokaż nieaktywne i sprawdź, czy produkt nie został wcześniej wycofany
+        - Jeśli produkt istnieje i jest wycofany, przywróć go zamiast zakładać nowy
+      ref:
+        - proc.magazyn.wycofanie-produktu
+    - solution:
+        - Nadaj nowemu produktowi inny indeks, np. dodając wariant wymiaru lub materiału
+      ref:
+        - proc.magazyn.dodanie-produktu
+
+- id: ERR-8002
+  module: magazyn
+  query: Nie można wycofać produktu użytego na dokumentach
+  causes:
+    - Indeks występuje na pozycji dokumentu magazynowego, zamówienia, faktury albo arkusza inwentaryzacji
+    - System pilnuje spójności historii i nie pozwala wycofać czegoś, co jest już w obrocie
+  solutions:
+    - solution:
+        - Sprawdź, na których dokumentach występuje produkt, filtrując listę dokumentów
+        - Jeśli produkt ma tylko przestać być zamawiany, zostaw go aktywnym i nie dodawaj do nowych dokumentów
+      ref:
+        - proc.magazyn.wyszukanie-dokumentu
+    - solution:
+        - Wycofanie jest możliwe wyłącznie dla indeksów, które nigdy nie weszły w obrót
+
+- id: ERR-8101
+  module: sprzedaz
+  query: Kontrahent o tym kodzie już istnieje
+  causes:
+    - W kartotece jest już kontrahent o takim samym kodzie, być może nieaktywny
+    - Kod wpisano z inną wielkością liter, ale system porównuje je bez rozróżniania
+  solutions:
+    - solution:
+        - Wyszukaj kontrahenta po kodzie i sprawdź, czy nie został wcześniej dezaktywowany
+        - Jeśli istnieje i jest nieaktywny, aktywuj go zamiast zakładać nowego
+      ref:
+        - proc.sprzedaz.dezaktywacja-kontrahenta
+    - solution:
+        - Nadaj nowemu kontrahentowi inny kod, zachowując przyjęty prefiks DOS, ODB lub KON
+      ref:
+        - proc.sprzedaz.dodanie-kontrahenta
+
+- id: ERR-8102
+  module: sprzedaz
+  query: Nie można dezaktywować kontrahenta użytego na dokumentach
+  causes:
+    - Kontrahent figuruje na dokumencie PZ lub WZ, zamówieniu zakupu, zamówieniu sprzedaży albo fakturze
+    - System chroni historię obrotu przed osieroceniem powiązań
+  solutions:
+    - solution:
+        - Sprawdź, na których dokumentach występuje kontrahent, filtrując listę dokumentów
+        - Jeśli chodzi tylko o zaprzestanie współpracy, zostaw kontrahenta aktywnym i nie wybieraj go na nowych dokumentach
+      ref:
+        - proc.magazyn.wyszukanie-dokumentu
+    - solution:
+        - Dezaktywacja jest możliwa wyłącznie dla kontrahentów, którzy nie weszli jeszcze w obrót

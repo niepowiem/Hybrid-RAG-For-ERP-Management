@@ -24,6 +24,8 @@ import type {
   Stocktake,
   StorageLocation,
   Warehouse,
+  CreateCounterpartyInput,
+  CreateProductInput,
 } from "@demo-erp/shared";
 
 export class ApiError extends Error {
@@ -64,8 +66,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   products: () => request<Product[]>("/api/products"),
+  createProduct: (input: CreateProductInput) =>
+      request<Product>("/api/products", { method: "POST", body: JSON.stringify(input) }),
+  toggleProduct: (id: string) =>
+      request<Product>(`/api/products/${id}/toggle`, { method: "POST" }),
   warehouses: () => request<Warehouse[]>("/api/warehouses"),
   counterparties: () => request<Counterparty[]>("/api/counterparties"),
+  createCounterparty: (input: CreateCounterpartyInput) =>
+      request<Counterparty>("/api/counterparties", { method: "POST", body: JSON.stringify(input) }),
+  toggleCounterparty: (id: string) =>
+      request<Counterparty>(`/api/counterparties/${id}/toggle`, { method: "POST" }),
   stock: () => request<StockLevel[]>("/api/stock"),
   documents: () => request<Document[]>("/api/documents"),
   document: (id: string) => request<Document>(`/api/documents/${id}`),

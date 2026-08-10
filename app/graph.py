@@ -195,7 +195,7 @@ class KnowledgeGraph:
         if node_already_exists or module_missing or parameters is None:
             return '\n'.join(error_messages)
 
-        self.nodes[node_name] = GraphNode(c_name=class_name, c_parameters=parameters, module=module.strip())
+        self.nodes[node_name] = GraphNode(c_name=class_name, c_parameters=parameters, module=module)
 
         return (f"OK: Pomyślnie utworzono node '{node_name}' "
                 f"(etykiety: '{self.SHARED_LABEL}', '{self.class_label(class_name)}')."
@@ -1734,8 +1734,8 @@ def answer_with_ollama(model: str, question: str, system: str | None = None):
 
     llm.pretty(message=question)
 
-GRAPHS_DIR = PROJECT_ROOT / "database" / "graphs"
-GRAPH_FORMAT_VERSION = 1
+GRAPHS_DIR = PROJECT_ROOT / "knowledge" / "graphs"
+GRAPH_FORMAT_VERSION = 2
 
 def _safe_filename_part(text: str) -> str:
     """
@@ -1772,7 +1772,15 @@ def save_graph(model: str, kg: KnowledgeGraph | None = None, directory: Path | s
     directory.mkdir(parents=True, exist_ok=True)
 
     now = datetime.now()
-    path = directory / f"{now:%Y-%m-%d_%H-%M-%S}_{_safe_filename_part(model)}.json"
+    baza = f"{now:%Y-%m-%d_%H-%M-%S}_{_safe_filename_part(model)}"
+    path = directory / f"{baza}.json"
+
+    # Dwa zapisy w tej samej sekundzie miały tę samą nazwę i drugi po cichu
+    # nadpisywał pierwszy. Przy kopii zapasowej to najgorszy możliwy błąd.
+    licznik = 2
+    while path.exists():
+        path = directory / f"{baza}_{licznik}.json"
+        licznik += 1
 
     nodes: dict[str, Any] = {}
     embeddings_saved: int = 0
@@ -1817,24 +1825,42 @@ def save_graph(model: str, kg: KnowledgeGraph | None = None, directory: Path | s
 
     return path
 
-def load_graph(path: Path | str, set_global: bool = True) -> KnowledgeGraph:
+def load_graph(path: Path | str, set_global: bool = True, strict: bool = True) -> KnowledgeGraph:
     """
     Wczytuje graf zapisany przez 'save_graph'. Domyślnie podstawia go pod globalny
     'knowledge_graph', żeby narzędzia i 'sync()' od razu na nim działały.
 
     :param path: ścieżka do pliku JSON
     :param set_global: czy podstawić wczytany graf jako globalny bufor
+    :param strict: czy przerywać przy niespójnościach (nieznana klasa, relacja
+        w nikąd). Przy False problemy są tylko wypisywane.
     :return: wczytany graf
     """
 
     global knowledge_graph
 
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    path = Path(path)
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Plik '{path.name}' nie jest poprawnym JSON-em: {e}") from e
 
     version = data.get("meta", {}).get("format_version")
-    if version != GRAPH_FORMAT_VERSION:
-        raise ValueError(f"Nieobsługiwana wersja formatu grafu: {version} "
-                         f"(oczekiwano {GRAPH_FORMAT_VERSION})")
+
+    if version is None:
+        raise ValueError(f"Plik '{path.name}' nie ma pola 'meta.format_version' "
+                         f"-- to nie jest zrzut grafu z 'save_graph'.")
+
+    if version > GRAPH_FORMAT_VERSION:
+        raise ValueError(f"Plik '{path.name}' zapisano nowszą wersją formatu ({version}); "
+                         f"ten kod obsługuje maksymalnie {GRAPH_FORMAT_VERSION}.")
+
+    # Brakujące sekcje wychwytujemy tutaj, żeby zamiast gołego KeyError
+    # dostać informację, czego brakuje.
+    for sekcja in ("klasy", "relacje", "etykiety", "wezly"):
+        if sekcja not in data:
+            raise ValueError(f"Plik '{path.name}' jest niekompletny -- brak sekcji '{sekcja}'.")
 
     kg = KnowledgeGraph()
     kg.classes = {name: GraphClassSchema(**schema) for name, schema in data["klasy"].items()}
@@ -1845,16 +1871,81 @@ def load_graph(path: Path | str, set_global: bool = True) -> KnowledgeGraph:
         kg.nodes[node_name] = GraphNode(
             c_name=entry["klasa"],
             module=entry.get("modul", ""),
-            c_parameters=entry["parametry"],
+            c_parameters=entry.get("parametry", {}),
             n_labels=set(entry.get("etykiety", [])),
             n_relations={
-                relation: [RelationEdge(target=e["target"], r_parameters=e["parametry"]) for e in edges]
+                relation: [RelationEdge(target=e["target"], r_parameters=e.get("parametry", {}))
+                           for e in edges]
                 for relation, edges in entry.get("relacje", {}).items()
             },
             embeddings=entry.get("embeddings"),
         )
 
+    problemy = _validate_loaded_graph(kg)
+
+    if version < GRAPH_FORMAT_VERSION:
+        bez_modulu = sum(1 for n in kg.nodes.values() if not n.module)
+
+        if bez_modulu:
+            problemy.append(
+                f"Format {version} (starszy niż {GRAPH_FORMAT_VERSION}): {bez_modulu} węzłów "
+                f"nie ma modułu. Wyszukiwanie zawężone do modułu ich NIE zwróci -- "
+                f"zbuduj graf od nowa zamiast wczytywać tę kopię."
+            )
+
+    if problemy:
+        naglowek = f"Niespójności w '{path.name}':"
+
+        if strict:
+            raise ValueError(naglowek + "\n- " + "\n- ".join(problemy) +
+                             "\n(użyj load_graph(..., strict=False), żeby wczytać mimo to)")
+
+        print(naglowek)
+        for x in problemy:
+            print(f"  - {x}")
+
     if set_global:
         knowledge_graph = kg
 
     return kg
+
+
+def _validate_loaded_graph(kg: KnowledgeGraph) -> list[str]:
+    """
+    Sprawdza spójność wczytanego grafu: czy klasy węzłów istnieją, czy relacje
+    są zadeklarowane i czy prowadzą do istniejących węzłów.
+    """
+
+    problemy: list[str] = []
+
+    for node_name, node in kg.nodes.items():
+        if node.c_name not in kg.classes:
+            problemy.append(f"węzeł '{node_name}' ma nieznaną klasę '{node.c_name}'")
+
+        for etykieta in node.n_labels:
+            if etykieta not in kg.labels:
+                problemy.append(f"węzeł '{node_name}' ma niezarejestrowaną etykietę '{etykieta}'")
+
+        for relacja, edges in node.n_relations.items():
+            if relacja not in kg.relations:
+                problemy.append(f"węzeł '{node_name}' używa niezadeklarowanej relacji '{relacja}'")
+
+            for edge in edges:
+                if edge.target not in kg.nodes:
+                    problemy.append(f"relacja '{node_name}' -[{relacja}]-> '{edge.target}' "
+                                    f"prowadzi do nieistniejącego węzła")
+
+    return problemy
+
+
+def latest_graph(directory: Path | str | None = None) -> Path | None:
+    """Najnowsza kopia zapasowa grafu, albo None gdy katalog jest pusty."""
+
+    directory = Path(directory) if directory else GRAPHS_DIR
+
+    if not directory.exists():
+        return None
+
+    pliki = sorted(directory.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+
+    return pliki[0] if pliki else None

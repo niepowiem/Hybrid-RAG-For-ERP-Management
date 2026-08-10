@@ -402,12 +402,13 @@ export function SalesOrderFormPage() {
           )}
           <span className="spacer" />
           {!isNew && so?.status === "fulfilled" && so.issuedDocumentId && (
-            <button
-              className="sm"
-              onClick={() => navigate(`/documents/${so.issuedDocumentId}`)}
-            >
-              Pokaż dokument WZ
-            </button>
+              <button
+                  className="sm"
+                  data-assistant-id="btn.so-show-document"
+                  onClick={() => navigate(`/documents/${so.issuedDocumentId}`)}
+              >
+                Pokaż dokument WZ
+              </button>
           )}
         </div>
       </div>

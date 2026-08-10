@@ -68,23 +68,25 @@ export function getAssistantContext(role: Role | null): AssistantContext {
       disabled: (el as HTMLButtonElement).disabled === true,
     }));
 
-  const formEl = Array.from(document.querySelectorAll(".card")).find(widoczny) ?? null;
-  const form = formEl
-    ? {
+  const karty = Array.from(document.querySelectorAll(".card")).filter(widoczny);
+  const form = karty.length
+      ? {
         id: "form.document",
-        fields: Array.from(formEl.querySelectorAll("input, select, textarea"))
-          .filter(widoczny)
-          .map((el) => {
-            const i = el as HTMLInputElement;
-            return {
-              id: el.getAttribute("data-assistant-id") ?? el.getAttribute("id") ?? "?",
-              label: etykieta(el),
-              filled: String(i.value ?? "").trim().length > 0,
-              invalid: el.classList.contains("invalid"),
-            };
-          }),
+        fields: karty.flatMap((karta) =>
+            Array.from(karta.querySelectorAll("input, select, textarea"))
+                .filter(widoczny)
+                .map((el) => {
+                  const i = el as HTMLInputElement;
+                  return {
+                    id: el.getAttribute("data-assistant-id") ?? el.getAttribute("id") ?? "?",
+                    label: etykieta(el),
+                    filled: String(i.value ?? "").trim().length > 0,
+                    invalid: el.classList.contains("invalid"),
+                  };
+                }),
+        ),
       }
-    : null;
+      : null;
 
   // Trzykrotnie nieudana walidacja tego samego pola = użytkownik utknął.
   let struggling: string | null = null;

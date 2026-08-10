@@ -1,0 +1,98 @@
+- id: concept.indeks-produktu
+  module: magazyn
+  title: Indeks produktu (SKU)
+  aliases:
+    - sku
+    - indeks
+    - kod produktu
+    - numer katalogowy
+    - symbol produktu
+  body: >
+    Indeks to unikalny identyfikator produktu w kartotece, na przykład SR-M8-100.
+    Musi być niepowtarzalny w całym systemie, także względem produktów wycofanych —
+    dlatego próba założenia drugiego produktu o tym samym indeksie kończy się błędem
+    ERR-8001. Indeks pojawia się na listach wyboru przy pozycjach dokumentów, w tabeli
+    stanów magazynowych oraz w arkuszach inwentaryzacji, i to po nim najszybciej
+    odszukuje się produkt w wyszukiwarce kartoteki.
+
+- id: concept.cena-ewidencyjna
+  module: magazyn
+  title: Cena ewidencyjna produktu
+  aliases:
+    - cena ewidencyjna
+    - cena z kartoteki
+    - cena domyślna
+    - wartość zapasu
+  body: >
+    Cena ewidencyjna to wartość przypisana produktowi w kartotece. Służy do dwóch
+    rzeczy: podpowiada się automatycznie przy dodawaniu pozycji do dokumentu oraz
+    stanowi podstawę wyliczenia wartości zapasu w widoku Stany magazynowe. Podpowiedź
+    działa tylko przy pustym polu ceny — jeśli faktura dostawcy mówi co innego, cenę
+    na pozycji można nadpisać ręcznie i nie zmienia to ceny w kartotece.
+
+- id: concept.stan-minimalny
+  module: magazyn
+  title: Stan minimalny produktu
+  aliases:
+    - minimum
+    - stan min
+    - poziom alarmowy
+    - czerwona ilość
+    - poniżej minimum
+  body: >
+    Stan minimalny to próg alarmowy ustawiany osobno dla każdego produktu w kartotece.
+    Gdy ilość na magazynie spadnie poniżej tej wartości, liczba w widoku Stany
+    magazynowe wyświetla się na czerwono, a pozycja wpada w filtr tylko poniżej
+    minimum. Kafelek Poniżej minimum na górze ekranu pokazuje, ilu produktów dotyczy
+    ten stan. System nie blokuje wydania towaru poniżej minimum — to sygnał do
+    uzupełnienia zapasu, a nie twarda reguła.
+
+- id: concept.jednostka-miary
+  module: magazyn
+  title: Jednostka miary
+  aliases:
+    - jednostka
+    - jm
+    - j.m.
+    - w czym liczymy
+  body: >
+    Jednostka miary określa, w czym liczony jest dany produkt: szt, kg, m, l, par
+    albo kpl. Ustawia się ją raz przy zakładaniu produktu i pojawia się wszędzie tam,
+    gdzie podaje się ilość — na pozycjach dokumentów, w stanach magazynowych i w
+    arkuszu inwentaryzacji. System nie przelicza jednostek między sobą, więc ilość
+    zawsze oznacza dokładnie tyle jednostek, ile wskazano w kartotece produktu.
+
+- id: concept.kontrahent
+  module: sprzedaz
+  title: Kontrahent, dostawca i odbiorca
+  aliases:
+    - kontrahent
+    - dostawca
+    - odbiorca
+    - klient
+    - firma zewnętrzna
+  body: >
+    Kontrahent to firma zewnętrzna zapisana w kartotece z kodem, nazwą, numerem NIP
+    i miastem. Rodzaj kontrahenta decyduje, gdzie się pojawi na listach wyboru:
+    dostawca na dokumentach PZ i zamówieniach zakupu, odbiorca na dokumentach WZ
+    i zamówieniach sprzedaży, a rodzaj dostawca i odbiorca w obu miejscach naraz.
+    Kod kontrahenta musi być unikalny — próba założenia duplikatu kończy się błędem
+    ERR-8101.
+
+- id: concept.status-aktywnosci
+  module: magazyn
+  title: Aktywny i nieaktywny w kartotekach
+  aliases:
+    - nieaktywny
+    - wycofany
+    - dezaktywacja
+    - czemu nie ma na liście
+    - produkt zniknął z listy
+  body: >
+    Produkty, kontrahenci i lokalizacje mają status aktywności zamiast możliwości
+    usunięcia. Rekord nieaktywny znika z list wyboru w formularzach, ale pozostaje
+    widoczny w kartotece i na wszystkich dokumentach z przeszłości — dzięki temu
+    historia obrotu nigdy się nie rozsypuje. Z tego samego powodu systemu nie da się
+    wycofać czegoś, co już weszło w obrót: taka próba kończy się błędem ERR-8002 dla
+    produktu, ERR-8102 dla kontrahenta albo ERR-6002 dla lokalizacji. Status zmienia
+    się jednym przyciskiem w wierszu tabeli i działa w obie strony.

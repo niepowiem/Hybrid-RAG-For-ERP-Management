@@ -8,25 +8,28 @@
     - nowy arkusz inwentaryzacji
     - jak policzyć magazyn
     - remanent jak rozpocząć
-  roles:
-    - magazynier
-    - kierownik
+  roles: [magazynier, kierownik]
   preconditions:
     - Dla wybranego magazynu nie może istnieć inna otwarta inwentaryzacja
+  goal: [inw.arkusz-otwarty]
   steps:
     - text: Przejdź do Inwentaryzacja w menu bocznym
       anchor: nav.stocktakes
       action: { kind: click }
+      provides: [ekran.inwentaryzacja]
     - text: Wybierz magazyn do policzenia z listy obok przycisku
       anchor: field.stocktake-warehouse
       action: { kind: select, label: "MAG-GL" }
+      requires: [ekran.inwentaryzacja]
+      provides: [inw.magazyn-wybrany]
     - text: Kliknij Nowa inwentaryzacja
       anchor: btn.stocktake-new
       action: { kind: click }
+      requires: [inw.magazyn-wybrany]
+      provides: [inw.arkusz-otwarty]
       note: System zapisuje stan księgowy z tej chwili jako punkt odniesienia — dokumenty zatwierdzane w trakcie liczenia nie zmienią arkusza
   verification: Otwiera się arkusz z listą produktów i pustą kolumną Policzono
-  common_errors:
-    - ERR-4001
+  common_errors: [ERR-4001]
 
 - id: proc.inwentaryzacja.wprowadzenie-liczen
   title: Wprowadzenie ilości policzonych do arkusza
@@ -37,24 +40,32 @@
     - gdzie wpisuję wyniki liczenia
     - jak uzupełnić arkusz inwentaryzacji
     - różnice inwentaryzacyjne skąd się biorą
-  roles:
-    - magazynier
-    - kierownik
+  roles: [magazynier, kierownik]
   preconditions:
     - Arkusz inwentaryzacji musi być otwarty
+  goal: [inw.policzone]
   steps:
+    - text: Przejdź do Inwentaryzacja w menu bocznym
+      anchor: nav.stocktakes
+      action: { kind: click }
+      provides: [ekran.inwentaryzacja]
     - text: Otwórz arkusz klikając jego numer na liście inwentaryzacji
       anchor: table.stocktakes
+      requires: [ekran.inwentaryzacja, inw.arkusz-otwarty]
+      provides: [inw.arkusz-wybrany]
       note: Otwarte arkusze mają status Otwarta
     - text: Dla każdej pozycji wpisz ilość policzoną fizycznie w kolumnie Policzono
       anchor: field.count-input
+      requires: [inw.arkusz-wybrany]
+      provides: [inw.policzone]
       note: Wartość zapisuje się po opuszczeniu pola — możesz przechodzić Tabem przez kolejne wiersze
     - text: Sprawdź kolumnę Różnica — nadwyżki na zielono, niedobory na czerwono
       anchor: table.stocktake-lines
+      requires: [inw.policzone]
+      provides: [inw.roznice-sprawdzone]
       note: Zero oznacza zgodność stanu fizycznego z księgowym; licznik różnic pokazuje się też w nagłówku arkusza
   verification: Licznik w nagłówku pokazuje policzone wszystkie pozycje, np. 4 / 4
-  common_errors:
-    - ERR-4004
+  common_errors: [ERR-4004]
 
 - id: proc.inwentaryzacja.zamkniecie
   title: Zamknięcie inwentaryzacji przez kierownika
@@ -65,21 +76,59 @@
     - jak zakończyć spis z natury
     - kto zamyka inwentaryzację
     - co zrobić z różnicami inwentaryzacyjnymi
-  roles:
-    - kierownik
+  roles: [kierownik]
   preconditions:
     - Wszystkie pozycje arkusza muszą mieć wpisaną ilość policzoną
     - Zamknąć arkusz może wyłącznie kierownik
+  goal: [inw.zamknieta]
   steps:
-    - text: Otwórz arkusz inwentaryzacji z listy
+    - text: Przejdź do Inwentaryzacja w menu bocznym
+      anchor: nav.stocktakes
+      action: { kind: click }
+      provides: [ekran.inwentaryzacja]
+    - text: Otwórz arkusz klikając jego numer na liście inwentaryzacji
       anchor: table.stocktakes
+      requires: [ekran.inwentaryzacja, inw.arkusz-otwarty]
+      provides: [inw.arkusz-wybrany]
+      note: Otwarte arkusze mają status Otwarta
     - text: Upewnij się, że licznik w nagłówku pokazuje komplet policzonych pozycji, np. policzono 4/4
+      requires: [inw.policzone]
+      provides: [inw.komplet-potwierdzony]
       note: Przy brakach system odmówi zamknięcia i wskaże, ile pozycji zostało
+    - text: W panelu bocznym w polu Kontekst uprawnień ustaw rolę Kierownik
+      anchor: field.role
+      action: { kind: select, label: "Kierownik" }
+      provides: [rola.kierownik]
+      note: Ten krok pomija się, jeśli już pracujesz jako kierownik
     - text: W stopce arkusza kliknij Zamknij inwentaryzację
       anchor: btn.stocktake-close
       action: { kind: click }
+      requires: [inw.komplet-potwierdzony, rola.kierownik]
+      provides: [inw.zamknieta]
       note: Rolę zmienisz w panelu bocznym w polu Kontekst uprawnień
   verification: Status arkusza zmienia się na Zamknięta, a arkusz staje się tylko do odczytu
-  common_errors:
-    - ERR-4002
-    - ERR-4003
+  common_errors: [ERR-4002, ERR-4003]
+
+- id: proc.inwentaryzacja.postep-liczenia
+  title: Sprawdzenie postępu liczenia na liście arkuszy
+  module: inwentaryzacja
+  summary: Gdzie zobaczyć, ile pozycji zostało już policzonych w każdym otwartym arkuszu inwentaryzacji.
+  query:
+    - ile jeszcze zostało do policzenia
+    - postęp inwentaryzacji
+    - które arkusze są otwarte
+    - czy inwentaryzacja się skończyła
+    - lista inwentaryzacji
+  roles: [magazynier, kierownik]
+  goal: [inw.postep-sprawdzony]
+  steps:
+    - text: Przejdź do Inwentaryzacja w menu bocznym
+      anchor: nav.stocktakes
+      action: { kind: click }
+      provides: [ekran.inwentaryzacja]
+    - text: Odczytaj kolumnę Policzono przy właściwym arkuszu
+      anchor: table.stocktakes
+      requires: [ekran.inwentaryzacja]
+      provides: [inw.postep-sprawdzony]
+      note: Zapis w formacie 3 / 4 oznacza trzy policzone pozycje z czterech
+  verification: Sprawdzenie postępu liczenia na liście arkuszy

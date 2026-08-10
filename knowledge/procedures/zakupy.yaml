@@ -8,47 +8,66 @@
     - nowe zz
     - jak domówić brakujący towar
     - zamówienie do dostawcy
-  roles:
-    - magazynier
-    - kierownik
+  roles: [magazynier, kierownik]
+  goal: [zz.zapisane]
   steps:
     - text: Przejdź do Zamówienia zakupu w menu bocznym
       anchor: nav.purchase-orders
       action: { kind: click }
+      provides: [ekran.zamowienia-zakupu]
     - text: Kliknij Nowe zamówienie
       anchor: btn.po-new
       action: { kind: click }
+      requires: [ekran.zamowienia-zakupu]
+      provides: [zz.nowe]
     - text: W polu Dostawca wybierz kontrahenta, u którego zamawiasz
       anchor: field.po-supplier
       action: { kind: select, label: "Stalmex" }
+      requires: [zz.nowe]
+      provides: [zz.dostawca]
       note: Lista pokazuje tylko dostawców — odbiorcy są ukryci
     - text: W polu Magazyn dostawy wybierz, dokąd ma trafić towar
       anchor: field.po-warehouse
       action: { kind: select, label: "MAG-GL" }
+      requires: [zz.nowe]
+      provides: [zz.magazyn]
     - text: Ustaw oczekiwaną datę dostawy
       anchor: field.po-expected-date
       action: { kind: fill, value: "2026-08-20" }
+      requires: [zz.nowe]
+      provides: [zz.data-dostawy]
     - text: W sekcji Dodatkowe możesz wpisać uwagi widoczne na wydruku zamówienia
       anchor: field.po-notes
+      requires: [zz.nowe]
+      provides: [zz.uwagi]
     - text: W stopce karty Pozycje kliknij Dodaj pozycję
       anchor: btn.po-line-add
       action: { kind: click }
+      requires: [zz.nowe]
+      provides: [zz.pozycja-nowa]
     - text: Wybierz produkt z listy
       anchor: field.po-line-product
       action: { kind: select, label: "SR-M8-100" }
+      requires: [zz.pozycja-nowa]
+      provides: [zz.pozycja-produkt]
       note: Cena podpowiada się automatycznie z kartoteki produktu
     - text: Wpisz zamawianą ilość
       anchor: field.po-line-quantity
       action: { kind: fill, value: "500" }
+      requires: [zz.pozycja-produkt]
+      provides: [zz.pozycja-ilosc]
     - text: Sprawdź wiersz Razem netto w stopce tabeli pozycji
       anchor: table.po-lines
+      requires: [zz.pozycja-ilosc]
+      provides: [zz.pozycje-sprawdzone]
       note: Wartość każdej pozycji przelicza się na bieżąco
     - text: Kliknij Zapisz zamówienie w stopce karty
       anchor: btn.po-save
       action: { kind: click }
+      requires: [zz.data-dostawy, zz.dostawca, zz.magazyn, zz.pozycja-ilosc]
+      provides: [zz.zapisane]
   verification: Zamówienie dostaje numer ZZ i status Szkic, otwiera się jego podgląd
-  common_errors:
-    - ERR-5001
+  common_errors: [ERR-5001]
 
 - id: proc.zakupy.wyslanie-zamowienia
   title: Wysłanie zamówienia do dostawcy
@@ -59,27 +78,33 @@
     - jak zatwierdzić zz
     - zamówienie do realizacji
     - wysyłka zamówienia do dostawcy
-  roles:
-    - magazynier
-    - kierownik
+  roles: [magazynier, kierownik]
   preconditions:
     - Zamówienie musi być w statusie Szkic
     - Zamówienie musi mieć co najmniej jedną pozycję
     - Dostawca musi być aktywny w kartotece kontrahentów
+  goal: [zz.wyslane]
   steps:
-    - text: Przejdź do Zamówienia zakupu i otwórz szkic klikając jego numer
+    - text: Przejdź do Zamówienia zakupu w menu bocznym
+      anchor: nav.purchase-orders
+      action: { kind: click }
+      provides: [ekran.zamowienia-zakupu]
+    - text: Otwórz szkic zamówienia klikając jego numer na liście
       anchor: table.purchase-orders
+      requires: [ekran.zamowienia-zakupu, zz.zapisane]
+      provides: [zz.otwarte-szkic]
     - text: Sprawdź pozycje i wiersz Razem netto w stopce tabeli
       anchor: table.po-lines
+      requires: [zz.otwarte-szkic]
+      provides: [zz.pozycje-zweryfikowane]
       note: Po wysłaniu zamówienia nie da się już edytować
     - text: W stopce karty Pozycje kliknij Wyślij do dostawcy
       anchor: btn.po-send
       action: { kind: click }
+      requires: [zz.otwarte-szkic]
+      provides: [zz.wyslane]
   verification: Status zamówienia zmienia się na Zamówione
-  common_errors:
-    - ERR-5001
-    - ERR-5002
-    - ERR-5003
+  common_errors: [ERR-5001, ERR-5002, ERR-5003]
 
 - id: proc.zakupy.przyjecie-dostawy
   title: Przyjęcie dostawy z zamówienia zakupu
@@ -90,26 +115,33 @@
     - jak przyjąć dostawę
     - jak zrobić pz z zamówienia
     - realizacja zamówienia zakupu
-  roles:
-    - magazynier
-    - kierownik
+  roles: [magazynier, kierownik]
   preconditions:
     - Zamówienie musi być w statusie Zamówione
+  goal: [zz.zrealizowane]
   steps:
-    - text: Przejdź do Zamówienia zakupu i otwórz zamówienie w statusie Zamówione
+    - text: Przejdź do Zamówienia zakupu w menu bocznym
+      anchor: nav.purchase-orders
+      action: { kind: click }
+      provides: [ekran.zamowienia-zakupu]
+    - text: Otwórz zamówienie w statusie Zamówione klikając jego numer na liście
       anchor: table.purchase-orders
+      requires: [ekran.zamowienia-zakupu, zz.wyslane]
+      provides: [zz.otwarte-zamowione]
     - text: W stopce karty Pozycje kliknij Przyjmij dostawę
       anchor: btn.po-receive
       action: { kind: click }
+      requires: [zz.otwarte-zamowione]
+      provides: [dokument.szkic-pz]
       note: System tworzy szkic dokumentu PZ z pozycjami z zamówienia i przenosi Cię do niego — numer zamówienia trafia w pole Numer obcy. Później wrócisz do PZ przyciskiem Pokaż dokument PZ
     - text: W szkicu PZ zweryfikuj ilości z dostawą fizyczną i zatwierdź dokument
       anchor: btn.document-confirm
       action: { kind: click }
+      requires: [dokument.szkic-pz]
+      provides: [dokument.typ-pz, dokument.zatwierdzony, zz.zrealizowane]
       note: Dopiero zatwierdzenie PZ zwiększa stany magazynowe — samo przyjęcie dostawy jeszcze nie
   verification: Zamówienie ma status Zrealizowane, a stan produktów rośnie po zatwierdzeniu PZ
-  common_errors:
-    - ERR-5003
-    - ERR-1003
+  common_errors: [ERR-5003, ERR-1003]
 
 - id: proc.zakupy.rejestracja-faktury
   title: Rejestracja faktury zakupu od dostawcy
@@ -121,44 +153,182 @@
     - faktura od dostawcy co zrobić
     - jak dodać fakturę do zamówienia
     - jak zrobić fz
-  roles:
-    - kierownik
+  roles: [kierownik]
+  goal: [fz.zaksiegowana]
   steps:
     - text: Przejdź do Faktury zakupu w menu bocznym
       anchor: nav.purchase-invoices
       action: { kind: click }
+      provides: [ekran.faktury-zakupu]
     - text: Kliknij Nowa faktura
       anchor: btn.pi-new
       action: { kind: click }
+      requires: [ekran.faktury-zakupu]
+      provides: [fz.nowa]
     - text: W sekcji Dane faktury wybierz zamówienie w polu Zamówienie zakupu, jeśli faktura go dotyczy
       anchor: field.pi-purchase-order
       action: { kind: select, label: "ZZ-2026-0001" }
-      note: Wybór zamówienia wypełnia dostawcę i pozycje automatycznie
+      optional: true
+      requires: [fz.nowa, zz.wyslane]
+      provides: [fz.powiazana-zz, fz.dostawca]
+      note: Krok opcjonalny — pomiń, jeśli faktura nie dotyczy zamówienia. Wybór zamówienia wypełnia dostawcę i pozycje automatycznie
     - text: Jeśli faktura nie dotyczy żadnego zamówienia, wskaż dostawcę ręcznie
       anchor: field.pi-supplier
+      requires: [fz.nowa]
+      provides: [fz.dostawca]
     - text: Wpisz numer faktury nadany przez dostawcę
       anchor: field.pi-external-number
       action: { kind: fill, value: "FV 2026/08/114" }
+      requires: [fz.nowa]
+      provides: [fz.numer]
       note: Podpowiedź pod polem przypomina, że numer musi być unikalny w obrębie dostawcy
     - text: W sekcji Terminy ustaw datę wystawienia
       anchor: field.pi-issue-date
       action: { kind: fill, value: "2026-08-11" }
+      requires: [fz.nowa]
+      provides: [fz.data-wystawienia]
     - text: Ustaw termin płatności
       anchor: field.pi-due-date
       action: { kind: fill, value: "2026-08-25" }
+      requires: [fz.nowa]
+      provides: [fz.termin-platnosci]
     - text: W tabeli pozycji sprawdź stawki VAT
       anchor: field.pi-line-vat
+      requires: [fz.nowa]
+      provides: [fz.vat-sprawdzony]
       note: Domyślna stawka to 23%, zmień ją tam, gdzie faktura mówi inaczej
     - text: Porównaj podsumowanie Netto, VAT i Brutto w stopce karty z kwotami na fakturze
       anchor: table.pi-lines
+      requires: [fz.numer]
+      provides: [fz.kwoty-sprawdzone]
     - text: Kliknij Zapisz fakturę
       anchor: btn.pi-save
       action: { kind: click }
+      requires: [fz.dostawca, fz.numer, fz.data-wystawienia, fz.termin-platnosci]
+      provides: [fz.zapisana]
     - text: Otwórz zapisaną fakturę i kliknij Zaksięguj, gdy wszystko się zgadza
       anchor: btn.pi-book
       action: { kind: click }
+      requires: [fz.zapisana]
+      provides: [fz.zaksiegowana]
       note: Zaksięgowanej faktury nie da się już edytować
   verification: Faktura dostaje numer FZ i status Zaksięgowana
-  common_errors:
-    - ERR-5201
-    - ERR-5202
+  common_errors: [ERR-5201, ERR-5202]
+
+- id: proc.zakupy.pozycje-faktury-recznie
+  title: Dodanie pozycji do faktury zakupu bez zamówienia
+  module: zakupy
+  summary: Jak wpisać pozycje faktury ręcznie, gdy faktura nie dotyczy żadnego zamówienia zakupu.
+  query:
+    - faktura bez zamówienia
+    - jak dodać pozycję do faktury
+    - faktura nie ma pozycji
+    - jak wpisać pozycje faktury ręcznie
+    - stawka vat na fakturze
+  roles: [kierownik]
+  preconditions:
+    - Faktura musi być otwarta w formularzu i mieć status Szkic
+  goal: [fz.pozycja-ilosc]
+  steps:
+    - text: W stopce karty Pozycje kliknij Dodaj pozycję
+      anchor: btn.pi-line-add
+      action: { kind: click }
+      requires: [fz.nowa]
+      provides: [fz.pozycja-nowa]
+      note: Przy fakturze powiązanej z zamówieniem pozycje wchodzą automatycznie
+    - text: Wybierz produkt z listy
+      anchor: field.pi-line-product
+      action: { kind: select, label: "SR-M8-100" }
+      requires: [fz.pozycja-nowa]
+      provides: [fz.pozycja-produkt]
+    - text: Wpisz ilość z faktury
+      anchor: field.pi-line-quantity
+      action: { kind: fill, value: "500" }
+      requires: [fz.pozycja-produkt]
+      provides: [fz.pozycja-ilosc]
+    - text: Wpisz cenę netto z faktury
+      anchor: field.pi-line-price
+      action: { kind: fill, value: "2.30" }
+      requires: [fz.pozycja-produkt]
+      provides: [fz.pozycja-cena]
+      note: Cena podpowiada się z kartoteki, ale faktura dostawcy ma pierwszeństwo
+  verification: Dodanie pozycji do faktury zakupu bez zamówienia
+
+- id: proc.zakupy.status-zamowienia
+  title: Sprawdzenie statusu zamówienia zakupu
+  module: zakupy
+  summary: Gdzie zobaczyć, czy zamówienie do dostawcy jest szkicem, zostało wysłane, czy dostawa już przyszła.
+  query:
+    - na jakim etapie jest zamówienie zakupu
+    - czy zamówienie zostało wysłane
+    - status zz
+    - czy dostawa przyszła
+    - lista zamówień zakupu
+  roles: [magazynier, kierownik]
+  goal: [zz.status-sprawdzony]
+  steps:
+    - text: Przejdź do Zamówienia zakupu w menu bocznym
+      anchor: nav.purchase-orders
+      action: { kind: click }
+      provides: [ekran.zamowienia-zakupu]
+    - text: Odczytaj kolumnę Status przy właściwym numerze zamówienia
+      anchor: table.purchase-orders
+      requires: [ekran.zamowienia-zakupu]
+      provides: [zz.status-sprawdzony]
+      note: Szkic, Zamówione i Zrealizowane to trzy kolejne etapy cyklu zamówienia
+  verification: Sprawdzenie statusu zamówienia zakupu
+
+- id: proc.zakupy.status-faktury
+  title: Sprawdzenie statusu faktury zakupu
+  module: zakupy
+  summary: Gdzie zobaczyć, które faktury od dostawców są jeszcze szkicami, a które już zaksięgowane.
+  query:
+    - czy faktura jest zaksięgowana
+    - lista faktur zakupu
+    - status faktury
+    - które faktury czekają na księgowanie
+    - termin płatności faktury
+  roles: [kierownik]
+  goal: [fz.status-sprawdzony]
+  steps:
+    - text: Przejdź do Faktury zakupu w menu bocznym
+      anchor: nav.purchase-invoices
+      action: { kind: click }
+      provides: [ekran.faktury-zakupu]
+    - text: Odczytaj kolumny Termin płatności i Status w tabeli
+      anchor: table.purchase-invoices
+      requires: [ekran.faktury-zakupu]
+      provides: [fz.status-sprawdzony]
+      note: Zaksięgowanej faktury nie da się już edytować
+  verification: Sprawdzenie statusu faktury zakupu
+
+- id: proc.zakupy.podglad-pz-z-zamowienia
+  title: Przejście z zamówienia zakupu do utworzonego dokumentu PZ
+  module: zakupy
+  summary: Jak wrócić do dokumentu PZ powstałego z przyjęcia dostawy, gdy zamknąłeś go bez zatwierdzania.
+  query:
+    - gdzie jest pz z zamówienia
+    - jak wrócić do dokumentu pz
+    - zgubiłem szkic pz
+    - gdzie poszedł dokument z przyjęcia dostawy
+    - jak znaleźć pz utworzony z zz
+  roles: [magazynier, kierownik]
+  preconditions:
+    - Zamówienie musi mieć status Zrealizowane
+  goal: [zz.dokument-otwarty]
+  steps:
+    - text: Przejdź do Zamówienia zakupu w menu bocznym
+      anchor: nav.purchase-orders
+      action: { kind: click }
+      provides: [ekran.zamowienia-zakupu]
+    - text: Otwórz zamówienie w statusie Zrealizowane klikając jego numer na liście
+      anchor: table.purchase-orders
+      requires: [ekran.zamowienia-zakupu, zz.zrealizowane]
+      provides: [zz.otwarte-zrealizowane]
+    - text: W stopce karty Pozycje kliknij Pokaż dokument PZ
+      anchor: btn.po-show-document
+      action: { kind: click }
+      requires: [zz.otwarte-zrealizowane]
+      provides: [zz.dokument-otwarty]
+      note: Przycisk pojawia się dopiero po przyjęciu dostawy
+  verification: Otwiera się dokument PZ powstały z tego zamówienia

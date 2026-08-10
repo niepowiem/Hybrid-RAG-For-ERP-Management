@@ -8,36 +8,47 @@
     - nowe miejsce składowania
     - jak utworzyć adres magazynowy
     - gdzie dodaję lokalizacje
-  roles:
-    - magazynier
-    - kierownik
+  roles: [magazynier, kierownik]
+  goal: [lok.zapisana]
   steps:
     - text: Przejdź do Lokalizacje w menu bocznym
       anchor: nav.locations
       action: { kind: click }
+      provides: [ekran.lokalizacje]
     - text: Kliknij Nowa lokalizacja
       anchor: btn.location-new
       action: { kind: click }
+      requires: [ekran.lokalizacje]
+      provides: [lok.nowa]
     - text: W polu Magazyn wybierz magazyn, w którym powstaje lokalizacja
       anchor: field.location-warehouse
       action: { kind: select, label: "MAG-GL" }
+      requires: [lok.nowa]
+      provides: [lok.magazyn]
     - text: Wpisz kod lokalizacji w układzie regał-poziom
       anchor: field.location-code
       action: { kind: fill, value: "F-01" }
+      requires: [lok.nowa]
+      provides: [lok.kod]
       note: Podpowiedź pod polem przypomina, że kod musi być unikalny w obrębie magazynu
     - text: Podaj orientacyjną pojemność w sztukach
       anchor: field.location-capacity
       action: { kind: fill, value: "400" }
+      requires: [lok.nowa]
+      provides: [lok.pojemnosc]
       note: Zero oznacza pojemność nieokreśloną
     - text: W drugim wierszu formularza uzupełnij opis, żeby było wiadomo, co tam leży
       anchor: field.location-description
       action: { kind: fill, value: "Regał F — narzędzia" }
+      requires: [lok.nowa]
+      provides: [lok.opis]
     - text: W stopce formularza kliknij Zapisz lokalizację
       anchor: btn.location-save
       action: { kind: click }
+      requires: [lok.magazyn, lok.kod]
+      provides: [lok.zapisana]
   verification: Nowa lokalizacja pojawia się na liście ze statusem Aktywna
-  common_errors:
-    - ERR-6001
+  common_errors: [ERR-6001]
 
 - id: proc.lokalizacje.dezaktywacja-lokalizacji
   title: Dezaktywacja lokalizacji magazynowej
@@ -48,25 +59,28 @@
     - jak wyłączyć regał
     - lokalizacja w remoncie co zrobić
     - dezaktywacja miejsca składowania
-  roles:
-    - magazynier
-    - kierownik
+  roles: [magazynier, kierownik]
   preconditions:
     - Lokalizacja nie może występować na pozycjach istniejących dokumentów
+  goal: [lok.dezaktywowana]
   steps:
     - text: Przejdź do Lokalizacje w menu bocznym
       anchor: nav.locations
       action: { kind: click }
+      provides: [ekran.lokalizacje]
     - text: Znajdź lokalizację wpisując jej kod w pole wyszukiwania
       anchor: field.location-search
       action: { kind: fill, value: "E-09" }
+      requires: [ekran.lokalizacje]
+      provides: [lok.wyszukana]
     - text: Kliknij Dezaktywuj w wierszu lokalizacji
       anchor: btn.location-toggle
       action: { kind: click }
+      requires: [lok.wyszukana]
+      provides: [lok.dezaktywowana]
       note: Lokalizacji użytej na dokumentach nie da się dezaktywować — system pilnuje historii
   verification: Status lokalizacji na liście zmienia się na Nieaktywna
-  common_errors:
-    - ERR-6002
+  common_errors: [ERR-6002]
 
 - id: proc.lokalizacje.wyszukanie-lokalizacji
   title: Wyszukanie lokalizacji i filtrowanie po magazynie
@@ -77,18 +91,51 @@
     - jak znaleźć regał
     - lista lokalizacji magazynu
     - co leży na regale
-  roles:
-    - magazynier
-    - kierownik
+  roles: [magazynier, kierownik]
+  goal: [lok.wyszukana]
   steps:
     - text: Przejdź do Lokalizacje w menu bocznym
       anchor: nav.locations
       action: { kind: click }
+      provides: [ekran.lokalizacje]
     - text: W filtrze Magazyn wybierz interesujący Cię magazyn
       anchor: field.location-filter-warehouse
       action: { kind: select, label: "MAG-GL" }
+      requires: [ekran.lokalizacje]
+      provides: [lok.filtr-magazyn]
     - text: Wpisz kod lub fragment opisu w pole wyszukiwania
       anchor: field.location-search
       action: { kind: fill, value: "A-01" }
+      requires: [ekran.lokalizacje]
+      provides: [lok.wyszukana]
       note: Wyszukiwanie działa po kodzie i po opisie jednocześnie
   verification: Tabela pokazuje tylko lokalizacje pasujące do filtrów, licznik po prawej podaje ile z ilu
+
+- id: proc.lokalizacje.aktywacja-lokalizacji
+  title: Ponowna aktywacja lokalizacji magazynowej
+  module: lokalizacje
+  summary: Jak przywrócić do użycia lokalizację wyłączoną wcześniej, na przykład po zakończonym remoncie regału.
+  query:
+    - jak aktywować lokalizację
+    - regał wrócił do użycia
+    - jak włączyć lokalizację z powrotem
+    - przywrócenie miejsca składowania
+  roles: [magazynier, kierownik]
+  goal: [lok.aktywowana]
+  steps:
+    - text: Przejdź do Lokalizacje w menu bocznym
+      anchor: nav.locations
+      action: { kind: click }
+      provides: [ekran.lokalizacje]
+    - text: Znajdź nieaktywną lokalizację wpisując jej kod w pole wyszukiwania
+      anchor: field.location-search
+      action: { kind: fill, value: "E-09" }
+      requires: [ekran.lokalizacje]
+      provides: [lok.nieaktywna-znaleziona]
+    - text: Kliknij Aktywuj w wierszu lokalizacji
+      anchor: btn.location-toggle
+      action: { kind: click }
+      requires: [lok.nieaktywna-znaleziona]
+      provides: [lok.aktywowana]
+      note: Ten sam przycisk służy do dezaktywacji — jego etykieta zależy od bieżącego statusu
+  verification: Ponowna aktywacja lokalizacji magazynowej

@@ -8,42 +8,60 @@
     - jak zrobić pz
     - jak zwiększyć stan magazynowy
     - przyjęcie zewnętrzne
-  roles:
-    - magazynier
-    - kierownik
+  roles: [magazynier, kierownik]
+  goal: [dokument.typ-pz, dokument.zatwierdzony]
   steps:
     - text: Przejdź do Dokumenty w menu bocznym
       anchor: nav.documents
       action: { kind: click }
+      provides: [ekran.dokumenty]
     - text: Kliknij Nowy dokument
       anchor: btn.document-new
       action: { kind: click }
+      requires: [ekran.dokumenty]
+      provides: [dokument.nowy]
     - text: W polu Typ dokumentu wybierz PZ
       anchor: field.document-type
       action: { kind: select, label: "PZ" }
+      requires: [dokument.nowy]
+      provides: [dokument.typ-pz]
       note: Po zapisaniu typu nie da się zmienić
     - text: W polu Dostawca wybierz kontrahenta, od którego przyjmujesz towar
       anchor: field.counterparty
       action: { kind: select, label: "Stalmex" }
+      requires: [dokument.nowy]
+      provides: [dokument.kontrahent]
     - text: W sekcji Magazyny wybierz Magazyn docelowy
       anchor: field.warehouse-to
       action: { kind: select, label: "MAG-GL" }
+      requires: [dokument.nowy]
+      provides: [dokument.magazyn-docelowy]
     - text: Przejdź na zakładkę Pozycje
       anchor: tab.lines
       action: { kind: click }
+      requires: [dokument.nowy]
+      provides: [zakladka.pozycje]
     - text: Kliknij Dodaj pozycję
       anchor: btn.line-add
       action: { kind: click }
+      requires: [zakladka.pozycje]
+      provides: [pozycja.nowa]
     - text: Wybierz produkt z listy
       anchor: field.line-product
       action: { kind: select, label: "SR-M8-100" }
+      requires: [pozycja.nowa]
+      provides: [pozycja.produkt]
       note: Cena podpowiada się automatycznie z kartoteki produktu
-    - text: Wpisz przyjmowaną ilość
+    - text: Wpisz ilość w pole pozycji
       anchor: field.line-quantity
       action: { kind: fill, value: "100" }
+      requires: [pozycja.produkt]
+      provides: [pozycja.ilosc]
     - text: Kliknij Zatwierdź dokument
       anchor: btn.document-confirm
       action: { kind: click }
+      requires: [pozycja.ilosc]
+      provides: [dokument.zatwierdzony]
   verification: Dokument dostaje status Zatwierdzony, a stan produktu rośnie
   common_errors: [ERR-1003]
 
@@ -57,38 +75,63 @@
     - jak zdjąć coś ze stanu
     - klient odbiera towar
     - wydanie zewnętrzne
-  roles:
-    - magazynier
-    - kierownik
+  roles: [magazynier, kierownik]
   preconditions:
     - Na magazynie źródłowym musi być wystarczająca ilość każdego produktu
+  goal: [dokument.typ-wz, dokument.zatwierdzony]
   steps:
-    - text: Przejdź do Dokumenty i kliknij Nowy dokument
+    - text: Przejdź do Dokumenty w menu bocznym
+      anchor: nav.documents
+      action: { kind: click }
+      provides: [ekran.dokumenty]
+    - text: Kliknij Nowy dokument
       anchor: btn.document-new
       action: { kind: click }
+      requires: [ekran.dokumenty]
+      provides: [dokument.nowy]
     - text: W polu Typ dokumentu wybierz WZ
       anchor: field.document-type
       action: { kind: select, label: "WZ" }
+      requires: [dokument.nowy]
+      provides: [dokument.typ-wz]
       note: Po zapisaniu typu nie da się zmienić
     - text: W polu Odbiorca wybierz kontrahenta, do którego wydajesz towar
       anchor: field.counterparty
       action: { kind: select, label: "Stalmex" }
+      requires: [dokument.nowy]
+      provides: [dokument.kontrahent]
     - text: W sekcji Magazyny wybierz Magazyn źródłowy
       anchor: field.warehouse-from
       action: { kind: select, label: "MAG-GL" }
+      requires: [dokument.nowy]
+      provides: [dokument.magazyn-zrodlowy]
     - text: Przejdź na zakładkę Pozycje
       anchor: tab.lines
       action: { kind: click }
+      requires: [dokument.nowy]
+      provides: [zakladka.pozycje]
     - text: Kliknij Dodaj pozycję
       anchor: btn.line-add
       action: { kind: click }
-    - text: Wybierz produkt i wpisz wydawaną ilość
+      requires: [zakladka.pozycje]
+      provides: [pozycja.nowa]
+    - text: Wybierz produkt z listy
+      anchor: field.line-product
+      action: { kind: select, label: "SR-M8-100" }
+      requires: [pozycja.nowa]
+      provides: [pozycja.produkt]
+      note: Cena podpowiada się automatycznie z kartoteki produktu
+    - text: Wpisz ilość w pole pozycji
       anchor: field.line-quantity
       action: { kind: fill, value: "10" }
-      note: Jeśli ilość przekroczy stan magazynu, dokument nie da się zatwierdzić
+      requires: [pozycja.produkt]
+      provides: [pozycja.ilosc]
+      note: Jeśli ilość przekroczy stan magazynu, dokumentu nie da się zatwierdzić
     - text: Kliknij Zatwierdź dokument
       anchor: btn.document-confirm
       action: { kind: click }
+      requires: [pozycja.ilosc]
+      provides: [dokument.zatwierdzony]
   verification: Stan produktu w widoku Stany magazynowe maleje o wydaną ilość
   common_errors: [ERR-1004, ERR-1003]
 
@@ -105,26 +148,70 @@
   preconditions:
     - Magazyn źródłowy i docelowy muszą być różne
     - Zatwierdzić MM może wyłącznie kierownik
+  goal: [dokument.typ-mm, dokument.zatwierdzony-mm]
   steps:
-    - text: Przejdź do Dokumenty i kliknij Nowy dokument
+    - text: Przejdź do Dokumenty w menu bocznym
+      anchor: nav.documents
+      action: { kind: click }
+      provides: [ekran.dokumenty]
+    - text: Kliknij Nowy dokument
       anchor: btn.document-new
       action: { kind: click }
+      requires: [ekran.dokumenty]
+      provides: [dokument.nowy]
     - text: W polu Typ dokumentu wybierz MM
       anchor: field.document-type
       action: { kind: select, label: "MM" }
+      requires: [dokument.nowy]
+      provides: [dokument.typ-mm]
+      note: Po zapisaniu typu nie da się zmienić
     - text: W sekcji Magazyny wybierz Magazyn źródłowy
       anchor: field.warehouse-from
       action: { kind: select, label: "MAG-GL" }
+      requires: [dokument.nowy]
+      provides: [dokument.magazyn-zrodlowy]
     - text: Wybierz inny Magazyn docelowy
       anchor: field.warehouse-to
       action: { kind: select, label: "MAG-PROD" }
+      requires: [dokument.magazyn-zrodlowy]
+      provides: [dokument.magazyn-docelowy]
       note: Pole Kontrahent jest przy MM nieaktywne i to jest normalne
-    - text: Na zakładce Pozycje dodaj produkty i kliknij Zapisz szkic
+    - text: Przejdź na zakładkę Pozycje
+      anchor: tab.lines
+      action: { kind: click }
+      requires: [dokument.nowy]
+      provides: [zakladka.pozycje]
+    - text: Kliknij Dodaj pozycję
+      anchor: btn.line-add
+      action: { kind: click }
+      requires: [zakladka.pozycje]
+      provides: [pozycja.nowa]
+    - text: Wybierz produkt z listy
+      anchor: field.line-product
+      action: { kind: select, label: "SR-M8-100" }
+      requires: [pozycja.nowa]
+      provides: [pozycja.produkt]
+      note: Cena podpowiada się automatycznie z kartoteki produktu
+    - text: Wpisz ilość w pole pozycji
+      anchor: field.line-quantity
+      action: { kind: fill, value: "25" }
+      requires: [pozycja.produkt]
+      provides: [pozycja.ilosc]
+    - text: Kliknij Zapisz szkic
       anchor: btn.document-save
       action: { kind: click }
+      requires: [pozycja.ilosc]
+      provides: [dokument.szkic-zapisany]
+    - text: W panelu bocznym w polu Kontekst uprawnień ustaw rolę Kierownik
+      anchor: field.role
+      action: { kind: select, label: "Kierownik" }
+      provides: [rola.kierownik]
+      note: Ten krok pomija się, jeśli już pracujesz jako kierownik
     - text: Jako kierownik otwórz szkic i kliknij Zatwierdź dokument
       anchor: btn.document-confirm
       action: { kind: click }
+      requires: [dokument.szkic-zapisany, rola.kierownik]
+      provides: [dokument.zatwierdzony, dokument.zatwierdzony-mm]
       note: Rolę zmienisz w panelu bocznym w polu Kontekst uprawnień
   verification: Stan maleje na magazynie źródłowym i rośnie na docelowym
   common_errors: [ERR-1005, ERR-3001]
@@ -140,15 +227,422 @@
     - dlaczego ilość jest na czerwono
     - co znaczy czerwona liczba
   roles: [magazynier, kierownik]
+  goal: [stany.przefiltrowane]
   steps:
     - text: Przejdź do Stany magazynowe w menu bocznym
       anchor: nav.stock
       action: { kind: click }
+      provides: [ekran.stany]
     - text: Wpisz indeks lub nazwę produktu w pole wyszukiwania
       anchor: field.filter-search
       action: { kind: fill, value: "SR-M8-100" }
+      requires: [ekran.stany]
+      provides: [stany.wyszukane]
     - text: Aby zobaczyć tylko braki, zaznacz filtr tylko poniżej minimum
       anchor: field.filter-low
       action: { kind: click }
+      requires: [stany.wyszukane]
+      provides: [stany.przefiltrowane]
       note: Ilość na czerwono oznacza stan poniżej minimum produktu
   verification: Tabela pokazuje ilość per magazyn wraz z jednostką i minimum
+
+- id: proc.magazyn.filtrowanie-stanow
+  title: Filtrowanie stanów magazynowych po magazynie i kategorii
+  module: magazyn
+  summary: Jak zawęzić tabelę stanów do jednego magazynu i jednej kategorii produktów.
+  query:
+    - jak zawęzić listę stanów
+    - stany tylko z jednego magazynu
+    - filtr kategorii na stanach
+    - jak odfiltrować stany magazynowe
+    - ile mam towaru w danym magazynie
+  roles: [magazynier, kierownik]
+  goal: [stany.widok-przefiltrowany]
+  steps:
+    - text: Przejdź do Stany magazynowe w menu bocznym
+      anchor: nav.stock
+      action: { kind: click }
+      provides: [ekran.stany]
+    - text: W filtrze Magazyn wybierz interesujący Cię magazyn
+      anchor: field.filter-warehouse
+      action: { kind: select, label: "MAG-GL" }
+      requires: [ekran.stany]
+      provides: [stany.filtr-magazyn]
+    - text: W filtrze Kategoria wybierz grupę produktów
+      anchor: field.filter-category
+      requires: [ekran.stany]
+      provides: [stany.filtr-kategoria]
+      note: Pozostaw Wszystkie, jeśli nie chcesz zawężać po kategorii
+    - text: Odczytaj wyfiltrowane pozycje w tabeli i licznik po prawej stronie filtrów
+      anchor: table.stock
+      requires: [stany.filtr-magazyn]
+      provides: [stany.widok-przefiltrowany]
+      note: Stopka tabeli pokazuje wartość wyfiltrowanych pozycji
+  verification: Filtrowanie stanów magazynowych po magazynie i kategorii
+
+- id: proc.magazyn.wyszukanie-dokumentu
+  title: Znalezienie dokumentu na liście dokumentów
+  module: magazyn
+  summary: Jak zawęzić listę dokumentów magazynowych po typie i statusie, żeby szybko znaleźć właściwy.
+  query:
+    - gdzie znajdę dokument
+    - jak znaleźć pz
+    - lista szkiców
+    - jak wyfiltrować dokumenty
+    - które dokumenty są niezatwierdzone
+    - jak sprawdzić status dokumentu
+  roles: [magazynier, kierownik]
+  goal: [dok.lista-przefiltrowana]
+  steps:
+    - text: Przejdź do Dokumenty w menu bocznym
+      anchor: nav.documents
+      action: { kind: click }
+      provides: [ekran.dokumenty]
+    - text: W filtrze Typ wybierz rodzaj dokumentu
+      anchor: field.filter-type
+      action: { kind: select, label: "PZ" }
+      requires: [ekran.dokumenty]
+      provides: [dok.filtr-typ]
+    - text: W filtrze Status wybierz Szkic albo Zatwierdzony
+      anchor: field.filter-status
+      action: { kind: select, label: "Szkic" }
+      requires: [ekran.dokumenty]
+      provides: [dok.filtr-status]
+    - text: Otwórz właściwy dokument klikając jego numer w tabeli
+      anchor: table.documents
+      requires: [dok.filtr-typ]
+      provides: [dok.lista-przefiltrowana]
+      note: Nagłówki kolumn sortują tabelę po kliknięciu
+  verification: Znalezienie dokumentu na liście dokumentów
+
+- id: proc.magazyn.zapis-szkicu
+  title: Zapisanie dokumentu jako szkic bez zatwierdzania
+  module: magazyn
+  summary: Jak odłożyć niedokończony dokument na później, nie ruszając stanów magazynowych.
+  query:
+    - jak zapisać dokument na później
+    - co robi zapisz szkic
+    - chcę dokończyć dokument jutro
+    - jak nie zatwierdzać dokumentu
+    - zapis bez zatwierdzenia
+  roles: [magazynier, kierownik]
+  preconditions:
+    - Dokument musi być otwarty w formularzu
+  goal: [dokument.szkic-zapisany]
+  steps:
+    - text: Sprawdź dane na zakładce Nagłówek
+      anchor: tab.header
+      action: { kind: click }
+      requires: [dokument.nowy]
+      provides: [dokument.naglowek-otwarty]
+    - text: W stopce formularza kliknij Zapisz szkic
+      anchor: btn.document-save
+      action: { kind: click }
+      requires: [dokument.naglowek-otwarty]
+      provides: [dokument.szkic-zapisany]
+      note: Szkic nie zmienia stanów magazynowych, dopiero zatwierdzenie
+  verification: Zapisanie dokumentu jako szkic bez zatwierdzania
+
+- id: proc.magazyn.numer-obcy
+  title: Wpisanie numeru dokumentu kontrahenta na dokumencie
+  module: magazyn
+  summary: Gdzie zapisać numer faktury lub listu przewozowego od dostawcy, żeby dało się go później odszukać.
+  query:
+    - gdzie wpisać numer od dostawcy
+    - numer obcy co to
+    - numer faktury dostawcy na pz
+    - jak powiązać dokument z numerem dostawcy
+  roles: [magazynier, kierownik]
+  goal: [dokument.numer-obcy]
+  steps:
+    - text: Przejdź na zakładkę Nagłówek
+      anchor: tab.header
+      action: { kind: click }
+      requires: [dokument.nowy]
+      provides: [dokument.naglowek-otwarty]
+    - text: W polu Numer obcy wpisz numer nadany przez kontrahenta
+      anchor: field.external-number
+      action: { kind: fill, value: "FV 2026/08/114" }
+      requires: [dokument.naglowek-otwarty]
+      provides: [dokument.numer-obcy]
+      note: Po tym numerze można później wyszukać dokument na liście
+  verification: Wpisanie numeru dokumentu kontrahenta na dokumencie
+
+- id: proc.magazyn.usuniecie-pozycji
+  title: Usunięcie pozycji z dokumentu magazynowego
+  module: magazyn
+  summary: Jak skasować błędnie dodany wiersz z zakładki Pozycje przed zatwierdzeniem dokumentu.
+  query:
+    - jak usunąć pozycję
+    - dodałem zły produkt
+    - jak skasować wiersz dokumentu
+    - jak poprawić pozycje dokumentu
+  roles: [magazynier, kierownik]
+  goal: [dokument.pozycja-usunieta]
+  steps:
+    - text: Przejdź na zakładkę Pozycje
+      anchor: tab.lines
+      action: { kind: click }
+      requires: [dokument.nowy]
+      provides: [zakladka.pozycje]
+    - text: W wierszu pozycji kliknij Usuń
+      anchor: btn.line-remove
+      action: { kind: click }
+      requires: [zakladka.pozycje]
+      provides: [dokument.pozycja-usunieta]
+      note: Pozycji zatwierdzonego dokumentu nie da się już usunąć
+  verification: Usunięcie pozycji z dokumentu magazynowego
+
+- id: proc.magazyn.lokalizacja-na-pozycji
+  title: Wskazanie lokalizacji składowania na pozycji dokumentu
+  module: magazyn
+  summary: Jak przypisać adres magazynowy do konkretnej pozycji przyjmowanego lub wydawanego towaru.
+  query:
+    - gdzie wpisać regał na dokumencie
+    - jak przypisać lokalizację do pozycji
+    - adres składowania na pz
+    - na którym regale położyć towar
+  roles: [magazynier, kierownik]
+  goal: [pozycja.lokalizacja]
+  steps:
+    - text: Przejdź na zakładkę Pozycje
+      anchor: tab.lines
+      action: { kind: click }
+      requires: [dokument.nowy]
+      provides: [zakladka.pozycje]
+    - text: W kolumnie Lokalizacja wybierz adres składowania dla pozycji
+      anchor: field.line-location
+      action: { kind: select, label: "A-01" }
+      requires: [pozycja.produkt]
+      provides: [pozycja.lokalizacja]
+      note: Pole jest opcjonalne — puste oznacza brak wskazanej lokalizacji
+  verification: Wskazanie lokalizacji składowania na pozycji dokumentu
+
+- id: proc.magazyn.zmiana-ceny-pozycji
+  title: Ręczna zmiana ceny na pozycji dokumentu
+  module: magazyn
+  summary: Jak nadpisać cenę podpowiedzianą z kartoteki, gdy faktura dostawcy mówi co innego.
+  query:
+    - jak zmienić cenę na dokumencie
+    - cena inna niż w kartotece
+    - jak nadpisać cenę ewidencyjną
+    - dostawca dał inną cenę
+  roles: [magazynier, kierownik]
+  goal: [pozycja.cena]
+  steps:
+    - text: Przejdź na zakładkę Pozycje
+      anchor: tab.lines
+      action: { kind: click }
+      requires: [dokument.nowy]
+      provides: [zakladka.pozycje]
+    - text: W kolumnie Cena netto wpisz cenę z dokumentu kontrahenta
+      anchor: field.line-price
+      action: { kind: fill, value: "12.50" }
+      requires: [pozycja.produkt]
+      provides: [pozycja.cena]
+      note: Cena podpowiada się z kartoteki tylko przy pustym polu
+  verification: Ręczna zmiana ceny na pozycji dokumentu
+
+- id: proc.magazyn.wyszukanie-produktu
+  title: Wyszukanie produktu w kartotece
+  module: magazyn
+  summary: Jak sprawdzić indeks, jednostkę, stan minimalny i cenę ewidencyjną produktu.
+  query:
+    - gdzie sprawdzę produkt
+    - jak znaleźć indeks
+    - kartoteka produktów
+    - jaka jest cena ewidencyjna
+    - jaki jest stan minimalny produktu
+    - jak dodać produkt
+  roles: [magazynier, kierownik]
+  goal: [produkt.znaleziony]
+  steps:
+    - text: Przejdź do Produkty w menu bocznym
+      anchor: nav.products
+      action: { kind: click }
+      provides: [ekran.produkty]
+    - text: Wpisz indeks lub nazwę w pole wyszukiwania
+      anchor: field.product-search
+      action: { kind: fill, value: "SR-M8-100" }
+      requires: [ekran.produkty]
+      provides: [produkt.wyszukany]
+    - text: Odczytaj dane produktu w tabeli
+      anchor: table.products
+      requires: [produkt.wyszukany]
+      provides: [produkt.znaleziony]
+      note: Zakładanie nowych produktów jest poza zakresem prototypu — przyciski Nowy produkt i Import CSV są nieaktywne
+  verification: Wyszukanie produktu w kartotece
+
+- id: proc.magazyn.dodanie-produktu
+  title: Założenie nowego produktu w kartotece
+  module: magazyn
+  summary: Jak dodać nowy indeks magazynowy z jednostką, kategorią, stanem minimalnym i ceną ewidencyjną.
+  query:
+    - jak dodać produkt
+    - nowy indeks magazynowy
+    - jak założyć kartotekę produktu
+    - chcę dodać nowy towar
+    - jak wprowadzić nowy asortyment
+    - nowy produkt
+  roles: [magazynier, kierownik]
+  goal: [produkt.zapisany]
+  steps:
+    - text: Przejdź do Produkty w menu bocznym
+      anchor: nav.products
+      action: { kind: click }
+      provides: [ekran.produkty]
+    - text: Kliknij Nowy produkt
+      anchor: btn.product-new
+      action: { kind: click }
+      requires: [ekran.produkty]
+      provides: [produkt.formularz]
+    - text: Wpisz indeks produktu
+      anchor: field.product-sku
+      action: { kind: fill, value: "SR-M10-120" }
+      requires: [produkt.formularz]
+      provides: [produkt.indeks]
+      note: Indeks musi być unikalny w całej kartotece
+    - text: Wpisz pełną nazwę produktu
+      anchor: field.product-name
+      action: { kind: fill, value: "Śruba M10 x 120 DIN 933" }
+      requires: [produkt.formularz]
+      provides: [produkt.nazwa]
+    - text: Wybierz jednostkę miary
+      anchor: field.product-unit
+      action: { kind: select, label: "szt" }
+      requires: [produkt.formularz]
+      provides: [produkt.jednostka]
+    - text: Wybierz kategorię produktu
+      anchor: field.product-category
+      action: { kind: select, label: "Złączne" }
+      requires: [produkt.formularz]
+      provides: [produkt.kategoria]
+    - text: Podaj stan minimalny
+      anchor: field.product-min-stock
+      action: { kind: fill, value: "500" }
+      requires: [produkt.formularz]
+      provides: [produkt.stan-min]
+      note: Poniżej tej ilości stan świeci się na czerwono w widoku Stany magazynowe
+    - text: Podaj cenę ewidencyjną
+      anchor: field.product-price
+      action: { kind: fill, value: "0.55" }
+      requires: [produkt.formularz]
+      provides: [produkt.cena]
+      note: Ta cena podpowiada się później na pozycjach dokumentów
+    - text: W stopce formularza kliknij Zapisz produkt
+      anchor: btn.product-save
+      action: { kind: click }
+      requires: [produkt.indeks, produkt.jednostka, produkt.kategoria, produkt.nazwa]
+      provides: [produkt.zapisany]
+  verification: Założenie nowego produktu w kartotece
+  common_errors: [ERR-8001]
+
+- id: proc.magazyn.wycofanie-produktu
+  title: Wycofanie produktu z kartoteki
+  module: magazyn
+  summary: Jak oznaczyć indeks jako nieaktywny, żeby zniknął z list wyboru na dokumentach.
+  query:
+    - jak wycofać produkt
+    - jak usunąć produkt
+    - produkt nieaktywny
+    - jak ukryć produkt z listy
+    - produkt nie jest już zamawiany
+    - jak przywrócić wycofany produkt
+  roles: [magazynier, kierownik]
+  preconditions:
+    - Produkt nie może występować na pozycjach dokumentów, zamówień, faktur ani arkuszy inwentaryzacji
+  goal: [produkt.wycofany]
+  steps:
+    - text: Przejdź do Produkty w menu bocznym
+      anchor: nav.products
+      action: { kind: click }
+      provides: [ekran.produkty]
+    - text: Znajdź produkt wpisując indeks lub nazwę w pole wyszukiwania
+      anchor: field.product-search
+      action: { kind: fill, value: "OL-HYD-46" }
+      requires: [ekran.produkty]
+      provides: [produkt.wyszukany]
+    - text: Kliknij Wycofaj w wierszu produktu
+      anchor: btn.product-toggle
+      action: { kind: click }
+      requires: [produkt.wyszukany]
+      provides: [produkt.wycofany]
+      note: Ten sam przycisk przywraca produkt — jego etykieta zależy od bieżącego statusu
+  verification: Wycofanie produktu z kartoteki
+  common_errors: [ERR-8002]
+
+- id: proc.magazyn.zatwierdzenie
+  title: Zatwierdzenie dokumentu magazynowego
+  module: magazyn
+  summary: Jak zamknąć dokument i zaksięgować ruch, żeby stany magazynowe faktycznie się zmieniły.
+  query:
+    - jak zatwierdzić dokument
+    - dlaczego stan się nie zmienił
+    - co robi zatwierdź dokument
+    - jak zaksięgować ruch magazynowy
+    - szkic a zatwierdzony różnica
+  roles: [magazynier, kierownik]
+  preconditions:
+    - Dokument musi mieć co najmniej jedną pozycję z produktem i ilością
+  goal: [dokument.zatwierdzony]
+  steps:
+    - text: Przejdź na zakładkę Pozycje
+      anchor: tab.lines
+      action: { kind: click }
+      requires: [dokument.nowy]
+      provides: [zakladka.pozycje]
+    - text: Sprawdź, czy każda pozycja ma wybrany produkt i podaną ilość
+      anchor: table.document-lines
+      requires: [zakladka.pozycje]
+      provides: [dokument.pozycje-sprawdzone]
+      note: Dokument bez pozycji nie da się zatwierdzić — system zwróci ERR-1003
+    - text: Kliknij Zatwierdź dokument
+      anchor: btn.document-confirm
+      action: { kind: click }
+      requires: [pozycja.ilosc]
+      provides: [dokument.zatwierdzony]
+  verification: Dokument dostaje status Zatwierdzony, a stany magazynowe się aktualizują
+  common_errors: [ERR-1003, ERR-1004, ERR-1006, ERR-3001]
+
+- id: proc.magazyn.edycja-szkicu
+  title: Edycja zapisanego szkicu dokumentu
+  module: magazyn
+  summary: Jak wrócić do niezatwierdzonego dokumentu, poprawić dane i zapisać zmiany.
+  query:
+    - jak poprawić dokument
+    - jak edytować szkic
+    - chcę zmienić dane na dokumencie
+    - gdzie znajdę niedokończony dokument
+    - jak wrócić do szkicu
+  roles: [magazynier, kierownik]
+  preconditions:
+    - Dokument musi być w statusie Szkic — zatwierdzonego nie da się edytować
+  goal: [dokument.szkic-zapisany]
+  steps:
+    - text: Przejdź do Dokumenty w menu bocznym
+      anchor: nav.documents
+      action: { kind: click }
+      provides: [ekran.dokumenty]
+    - text: W filtrze Status wybierz Szkic albo Zatwierdzony
+      anchor: field.filter-status
+      action: { kind: select, label: "Szkic" }
+      requires: [ekran.dokumenty]
+      provides: [dok.filtr-status]
+    - text: Otwórz szkic klikając jego numer w tabeli
+      anchor: table.documents
+      requires: [dok.filtr-status]
+      provides: [dokument.nowy]
+      note: Zatwierdzonego dokumentu nie da się edytować — system zwróci ERR-1002
+    - text: Sprawdź dane na zakładce Nagłówek
+      anchor: tab.header
+      action: { kind: click }
+      requires: [dokument.nowy]
+      provides: [dokument.naglowek-otwarty]
+    - text: W stopce formularza kliknij Zapisz szkic
+      anchor: btn.document-save
+      action: { kind: click }
+      requires: [dokument.naglowek-otwarty]
+      provides: [dokument.szkic-zapisany]
+      note: Szkic nie zmienia stanów magazynowych, dopiero zatwierdzenie
+  verification: Zmiany zapisują się, dokument zostaje w statusie Szkic
+  common_errors: [ERR-1002]

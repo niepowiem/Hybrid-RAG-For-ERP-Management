@@ -35,7 +35,11 @@ export type ErrorCode =
   | "ERR-7001"
   | "ERR-7002"
   | "ERR-7003"
-  | "ERR-7004";
+  | "ERR-7004"
+  | "ERR-8001"
+  | "ERR-8002"
+  | "ERR-8101"
+  | "ERR-8102";
 
 export interface ErrorDef {
   code: ErrorCode;
@@ -387,6 +391,74 @@ export const ERRORS: Record<ErrorCode, ErrorDef> = {
       "Zrealizuj zamówienie częściowo albo domów brakujący towar zamówieniem zakupu",
     ],
     resolutionRefs: ["proc.magazyn.sprawdzenie-stanu", "proc.zakupy.utworzenie-zamowienia"],
+    isKnownBug: false,
+  },
+  // ------------------------- kartoteki (8xxx) ------------------------------
+  "ERR-8001": {
+    code: "ERR-8001",
+    httpStatus: 409,
+    messageUser:
+        "Produkt o tym indeksie już istnieje. Indeks musi być unikalny w całej kartotece.",
+    messageDev: "Duplicate product SKU",
+    causes: [
+      "W kartotece jest już produkt o takim indeksie — być może wycofany i ukryty filtrem",
+      "Indeks wpisano inną wielkością liter, a system porównuje je bez rozróżniania",
+    ],
+    resolution: [
+      "Zaznacz pokaż nieaktywne i sprawdź, czy produkt nie został wcześniej wycofany",
+      "Jeśli produkt istnieje i jest wycofany, przywróć go zamiast zakładać nowy",
+    ],
+    resolutionRefs: ["proc.magazyn.wyszukanie-produktu", "proc.magazyn.wycofanie-produktu"],
+    isKnownBug: false,
+  },
+  "ERR-8002": {
+    code: "ERR-8002",
+    httpStatus: 409,
+    messageUser:
+        "Nie można wycofać produktu, który występuje na pozycjach dokumentów.",
+    messageDev: "Product is referenced by document, order, invoice or stocktake lines",
+    causes: [
+      "Indeks występuje na pozycji dokumentu, zamówienia, faktury albo arkusza inwentaryzacji",
+      "System pilnuje spójności historii obrotu",
+    ],
+    resolution: [
+      "Produkt z historią pozostaje aktywny — zamiast wycofania przestań go dodawać do nowych dokumentów",
+      "Sprawdź, na których dokumentach występuje, filtrując listę dokumentów",
+    ],
+    resolutionRefs: ["proc.magazyn.wyszukanie-dokumentu"],
+    isKnownBug: false,
+  },
+  "ERR-8101": {
+    code: "ERR-8101",
+    httpStatus: 409,
+    messageUser: "Kontrahent o tym kodzie już istnieje. Kod musi być unikalny.",
+    messageDev: "Duplicate counterparty code",
+    causes: [
+      "W kartotece jest już kontrahent o takim kodzie — być może nieaktywny",
+      "Kod wpisano inną wielkością liter, a system porównuje je bez rozróżniania",
+    ],
+    resolution: [
+      "Wyszukaj kontrahenta po kodzie i sprawdź, czy nie został wcześniej dezaktywowany",
+      "Nadaj nowemu kontrahentowi inny kod, zachowując prefiks DOS, ODB albo KON",
+    ],
+    resolutionRefs: ["proc.sprzedaz.wyszukanie-kontrahenta", "proc.sprzedaz.dodanie-kontrahenta"],
+    isKnownBug: false,
+  },
+  "ERR-8102": {
+    code: "ERR-8102",
+    httpStatus: 409,
+    messageUser:
+        "Nie można dezaktywować kontrahenta użytego na dokumentach lub zamówieniach.",
+    messageDev: "Counterparty is referenced by documents, orders or invoices",
+    causes: [
+      "Kontrahent figuruje na dokumencie PZ lub WZ, zamówieniu albo fakturze",
+      "System chroni historię obrotu przed osieroceniem powiązań",
+    ],
+    resolution: [
+      "Kontrahent z historią pozostaje aktywny — po prostu nie wybieraj go na nowych dokumentach",
+      "Sprawdź, na których dokumentach występuje, filtrując listę dokumentów",
+    ],
+    resolutionRefs: ["proc.magazyn.wyszukanie-dokumentu"],
     isKnownBug: false,
   },
 };

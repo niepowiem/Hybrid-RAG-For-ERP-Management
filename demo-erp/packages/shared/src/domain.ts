@@ -412,3 +412,55 @@ export const CreatePurchaseInvoiceSchema = z.object({
   ),
 });
 export type CreatePurchaseInvoiceInput = z.infer<typeof CreatePurchaseInvoiceSchema>;
+
+// ============================ KARTOTEKA PRODUKTÓW ==========================
+// Zakładanie i wycofywanie indeksów magazynowych. Kod produktu (SKU) jest
+// unikalny globalnie, w odróżnieniu od kodu lokalizacji, który wystarczy,
+// że jest unikalny w obrębie magazynu.
+
+/** Jednostki miary dostępne w kartotece. Lista zamknięta — ułatwia autopilota. */
+export const UNITS = ["szt", "kg", "m", "l", "par", "kpl"] as const;
+export type Unit = (typeof UNITS)[number];
+
+export const CreateProductSchema = z.object({
+  sku: z
+      .string()
+      .min(2, "Podaj indeks produktu, np. SR-M8-100")
+      .max(20, "Indeks może mieć najwyżej 20 znaków"),
+  name: z.string().min(3, "Podaj nazwę produktu"),
+  unit: z.enum(UNITS, { errorMap: () => ({ message: "Wybierz jednostkę miary" }) }),
+  category: z.string().min(1, "Wybierz kategorię"),
+  minStock: z
+      .number({ invalid_type_error: "Stan minimalny musi być liczbą" })
+      .nonnegative("Stan minimalny nie może być ujemny"),
+  price: z
+      .number({ invalid_type_error: "Cena musi być liczbą" })
+      .nonnegative("Cena nie może być ujemna"),
+});
+export type CreateProductInput = z.infer<typeof CreateProductSchema>;
+
+// =========================== KARTOTEKA KONTRAHENTÓW =========================
+
+export const COUNTERPARTY_KINDS = ["supplier", "customer", "both"] as const;
+
+export const COUNTERPARTY_KIND_LABELS: Record<(typeof COUNTERPARTY_KINDS)[number], string> = {
+  supplier: "Dostawca",
+  customer: "Odbiorca",
+  both: "Dostawca i odbiorca",
+};
+
+export const CreateCounterpartySchema = z.object({
+  code: z
+      .string()
+      .min(3, "Podaj kod kontrahenta, np. DOS-003")
+      .max(12, "Kod może mieć najwyżej 12 znaków"),
+  name: z.string().min(3, "Podaj nazwę kontrahenta"),
+  taxId: z
+      .string()
+      .regex(/^\d{10}$/, "NIP musi mieć dokładnie 10 cyfr, bez myślników"),
+  city: z.string().min(2, "Podaj miejscowość"),
+  kind: z.enum(COUNTERPARTY_KINDS, {
+    errorMap: () => ({ message: "Wybierz rodzaj kontrahenta" }),
+  }),
+});
+export type CreateCounterpartyInput = z.infer<typeof CreateCounterpartySchema>;

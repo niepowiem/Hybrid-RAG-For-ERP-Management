@@ -57,21 +57,24 @@ def check_for_duplicates(documents: list[KB_DATATYPE]) -> None:
         for document in duplicates:
             print(f"Duplikat id: {document.id} ({type(document).__name__})", file=sys.stderr)
 
-        raise SystemExit(f"{len(duplicates)} zduplikowanych id w bazie wiedzy")
+        #raise SystemExit(f"{len(duplicates)} zduplikowanych id w bazie wiedzy")
 
 def ingest_llm(driver: Driver, model:str):
+    print(1)
     initialize_knowledge_graph()
 
+    print(2)
     # Pre-flight: sprawdzamy model embeddingów ZANIM zbudujemy graf. Inaczej błąd
     # wyjdzie dopiero przy sync(), po kilkunastu minutach pracy modelu
     embed = EmbedModel(EMBED_MODEL)
     test_vector = embed.encode("test")[0]
 
+    print(3)
     if len(test_vector) != EMBED_MODEL_DIM:
         raise RuntimeError(f"EMBED_MODEL_DIM={EMBED_MODEL_DIM}, ale model '{EMBED_MODEL}' "
                            f"zwraca wektory o wymiarze {len(test_vector)}. Popraw .env.")
 
-
+    print(4)
     documents = load_knowledge()
     check_for_duplicates(documents)
 
@@ -79,24 +82,30 @@ def ingest_llm(driver: Driver, model:str):
         [document.__repr__() for document in documents]
     )
 
+    print(5)
     print(document_string)
 
     build_graph_with_ollama(model=model, documents=document_string)
 
     from app.plan import register_system_schema, attach_steps_from_documents
 
+    print(6)
     register_message = register_system_schema(graph.knowledge_graph)
     print("\n".join(register_message))
 
+    print(7)
     report = attach_steps_from_documents(graph.knowledge_graph, documents)
-    print(f"\nDodano {report['kroki']} kroków do {report['procedury']} procedur")
+    print(report['kroki'], report['wspoldzielone'], report['stany'])
+    print('BRAKUJĄCE:', report['brakujace'])
 
+    print(8)
     print_graph()
     saved_path = graph.save_graph(model=model, embed_model=EMBED_MODEL)
     print(f"\nGraf zapisany: {saved_path}")
 
     input("[ENTER], aby zsynchronizować do bazy danych...")
 
+    print(9)
     result = graph.knowledge_graph.sync(driver=driver,
                                         embed_model=embed,
                                         embed_dimensions=EMBED_MODEL_DIM)

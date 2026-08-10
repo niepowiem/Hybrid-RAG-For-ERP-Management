@@ -402,12 +402,13 @@ export function PurchaseOrderFormPage() {
           )}
           <span className="spacer" />
           {!isNew && po?.status === "received" && po.receivedDocumentId && (
-            <button
-              className="sm"
-              onClick={() => navigate(`/documents/${po.receivedDocumentId}`)}
-            >
-              Pokaż dokument PZ
-            </button>
+              <button
+                  className="sm"
+                  data-assistant-id="btn.po-show-document"
+                  onClick={() => navigate(`/documents/${po.receivedDocumentId}`)}
+              >
+                Pokaż dokument PZ
+              </button>
           )}
         </div>
       </div>

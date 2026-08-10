@@ -1,19 +1,21 @@
 import json
 import os
+import re
+import time
 from pathlib import Path
 
 import httpx
 from typing import Any, Iterator, Callable, Iterable
 
 from dotenv import load_dotenv
-from langchain_core.tools import BaseTool
+from langchain.tools import BaseTool
 
 load_dotenv()
 
 def _require_env(name: str) -> str:
     """
     Zmienna wymagana do działania -- brak wartości przerywa import z czytelnym
-    komunikatem zamiast wysyłać 'model: null' do Ollamy.
+    komunikatem zamiast wysyłać błędne żądanie do OpenAI.
     """
 
     value = os.getenv(name)
@@ -22,17 +24,87 @@ def _require_env(name: str) -> str:
 
     return value
 
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
+# OPENAI_BASE_URL pozwala też podpiąć dowolny serwer kompatybilny z OpenAI API
+# (np. Azure OpenAI proxy, vLLM, LiteLLM itp.) bez zmiany kodu.
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+OPENAI_API_KEY = _require_env("OPENAI_API_KEY")
+
 LLM_MODEL = _require_env("LLM_MODEL")
+
+# Embeddingi wracają na lokalną Ollamę
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 
 EMBED_MODEL = _require_env("EMBED_MODEL")
 EMBED_MODEL_DIM = int(os.getenv("EMBED_MODEL_DIM", "1024"))
 
+# Poniższe zmienne zostawione bez zmian -- dotyczą bazy grafowej, nie backendu LLM
 GRAPH_MODEL = _require_env("GRAPH_MODEL")
 GRAPH_DB_URL = os.getenv("GRAPH_DB_URL", "bolt://localhost:7687")
 GRAPH_DB_PASSWORD = _require_env("GRAPH_DB_PASSWORD")
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+_REASONING_MODEL_PREFIXES = ("o1", "o3", "o4", "gpt-5")
+
+
+def _is_reasoning_model(model: str) -> bool:
+    """
+    Modele 'reasoningowe' OpenAI (o1/o3/o4/gpt-5*) nie przyjmują temperature/top_p
+    i zamiast tego obsługują parametr 'reasoning_effort'.
+    """
+
+    return model.lower().startswith(_REASONING_MODEL_PREFIXES)
+
+
+def _auth_headers() -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+
+def _raise_openai_error(response: httpx.Response) -> None:
+    """
+    OpenAI zwraca przy błędzie JSON w postaci {"error": {"message", "type", "code", ...}}.
+    httpx.raise_for_status() tego nie pokazuje, więc wyciągamy to ręcznie, żeby zamiast
+    gołego '400 Bad Request' było widać PRAWDZIWY powód (zły parametr, zły typ pola,
+    przekroczony limit tokenów itd.).
+    """
+
+    try:
+        body = response.json()
+        detail = body.get("error", {}).get("message") or json.dumps(body, ensure_ascii=False)
+    except Exception:
+        detail = response.text
+
+    raise RuntimeError(
+        f"OpenAI API zwróciło błąd {response.status_code} dla modelu '{LLM_MODEL}':\n{detail}"
+    )
+
+
+_MAX_RATE_LIMIT_RETRIES = 6
+
+
+def _seconds_until_retry(response: httpx.Response, attempt: int) -> float:
+    """
+    Wylicza ile poczekać po 429. Najpierw próbujemy standardowego nagłówka
+    'Retry-After', potem parsujemy komunikat OpenAI ("Please try again in 4.944s"),
+    a w ostateczności robimy exponential backoff.
+    """
+
+    retry_after_header = response.headers.get("retry-after")
+    if retry_after_header:
+        try:
+            return float(retry_after_header) + 0.25
+        except ValueError:
+            pass
+
+    match = re.search(r"try again in ([\d.]+)s", response.text)
+    if match:
+        return float(match.group(1)) + 0.25
+
+    return min(2 ** attempt, 30.0)
+
 
 class ChatModel:
     __slots__ = ("model", "system", "memory", "messages", "tools", "tool_functions")
@@ -42,13 +114,13 @@ class ChatModel:
                  memory: bool = True,
                  tools: Iterable[BaseTool] | None = None) -> None:
         """
-        Class that allows for chatting with a model of your choosing including streaming, memory and tool use
+        Class that allows for chatting with an OpenAI model of your choosing including
+        streaming, memory and tool use.
 
-        :param model: model that you want ollama to utilize np. qwen3.5:4b
+        :param model: model OpenAI, np. "gpt-4o", "gpt-4o-mini", "o3", "gpt-5"
         :param system: system prompt that explains model how to act. Default: "Jesteś pomocnym asystentem."
         :param memory: do model takes previous messages into consideration. Default: True
-        :param tool_definitions: list of tool definitions in JSON Schema format (Ollama/OpenAI function-calling format)
-        :param tools: mapping of tool name -> callable that executes it
+        :param tools: lista narzędzi LangChain (@tool) dostępnych dla modelu
         """
 
         self.model: str = model
@@ -56,7 +128,7 @@ class ChatModel:
         self.memory: bool = memory
 
         tool_list: list[BaseTool] = list(tools) if tools is not None else []
-        self.tools: list[dict[str, Any]] = langchain_tools_to_ollama_format(tool_list)
+        self.tools: list[dict[str, Any]] = langchain_tools_to_openai_format(tool_list)
         self.tool_functions: dict[str, Callable] = langchain_tools_to_function_map(tool_list)
 
         self.messages: list[dict[str, Any]] = [
@@ -64,18 +136,9 @@ class ChatModel:
         ]
 
     def _add_user_message(self, message: str) -> None:
-        """
-        Adds user message to messages list for model to know previous conversation
-
-        :param message:
-        :return:
-        """
-
         if self.memory:
             self.messages.append({"role": "user", "content": message})
-
         else:
-
             # Jeżeli memory jest wyłączone, zostawiamy tylko system prompt i dodajemy wiadomość użytkownika
             self.messages = [
                 self.messages[0],
@@ -87,50 +150,132 @@ class ChatModel:
         Kończy turę rozmowy. Przy memory=False zostawiamy wyłącznie system prompt --
         wiadomości asystenta i wyniki narzędzi są potrzebne TYLKO w obrębie jednej
         tury (pętla tool-callingu), nie pomiędzy turami.
-
-        :return:
         """
 
         if not self.memory:
             self.messages = [self.messages[0]]
 
-    def _call_ollama(self, think: bool = False, stream: bool = False, options: dict[str, Any] | None = None,
-                     timeout: int = 1200) -> dict[str, Any] | Iterator[dict[str, Any]]:
-        if options is None:
-            options = {"temperature": 0.1, "top_p": 0.9}
-
+    def _build_payload(self, stream: bool, think: bool, options: dict[str, Any] | None) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": self.messages,
             "stream": stream,
-            "think": think,
-            "options": options
         }
 
         if self.tools:
             payload["tools"] = self.tools
 
-        if not stream:
-            response = httpx.post(f"{OLLAMA_URL}/api/chat", json=payload, timeout=timeout)
-            response.raise_for_status()
+        if _is_reasoning_model(self.model):
+            # Cała rodzina gpt-5.6 (sol/terra/luna) domyślnie "rozumuje", a
+            # /v1/chat/completions odrzuca kombinację function tools + jakikolwiek
+            # reasoning_effort inny niż "none" (błąd 400: "Function tools with
+            # reasoning_effort are not supported ... use /v1/responses or set
+            # reasoning_effort to 'none'"). Jeśli mamy narzędzia, wymuszamy "none"
+            # niezależnie od 'think' -- inaczej request zawsze się wywali.
+            if self.tools:
+                payload["reasoning_effort"] = "none"
+            elif think:
+                payload["reasoning_effort"] = "medium"
+        else:
+            opts = options if options is not None else {"temperature": 0.1, "top_p": 0.9}
+            # 'num_predict'/'num_ctx' to parametry specyficzne dla Ollamy -- mapujemy je,
+            # resztę (temperature/top_p itp.) przekazujemy wprost jako top-level pola OpenAI
+            for key, value in opts.items():
+                if key == "num_predict":
+                    if value and value > 0:
+                        payload["max_tokens"] = value
+                elif key == "num_ctx":
+                    continue  # OpenAI nie przyjmuje kontekstu jako parametru requestu
+                else:
+                    payload[key] = value
 
-            return response.json()
+        if stream:
+            payload["stream_options"] = {"include_usage": True}
+
+        return payload
+
+    def _call_openai(self, think: bool = False, stream: bool = False, options: dict[str, Any] | None = None,
+                      timeout: int = 1200) -> dict[str, Any] | Iterator[dict[str, Any]]:
+        payload = self._build_payload(stream=stream, think=think, options=options)
+        url = f"{OPENAI_BASE_URL}/chat/completions"
+
+        if not stream:
+            for attempt in range(_MAX_RATE_LIMIT_RETRIES):
+                try:
+                    response = httpx.post(url, headers=_auth_headers(), json=payload, timeout=timeout)
+                except httpx.TransportError as e:
+                    # Chwilowe zerwanie połączenia / błąd DNS (np. Errno 11001 na
+                    # Windows) -- nie problem w kodzie, tylko w sieci. Próbujemy ponownie
+                    # zamiast wywalać cały (często długi) proces ingestu.
+                    if attempt < _MAX_RATE_LIMIT_RETRIES - 1:
+                        time.sleep(min(2 ** attempt, 30.0))
+                        continue
+                    raise RuntimeError(
+                        f"Nie udało się połączyć z OpenAI API po {_MAX_RATE_LIMIT_RETRIES} próbach "
+                        f"(błąd sieci/DNS): {e}"
+                    ) from e
+
+                if response.status_code == 429 and attempt < _MAX_RATE_LIMIT_RETRIES - 1:
+                    time.sleep(_seconds_until_retry(response, attempt))
+                    continue
+
+                if response.status_code >= 400:
+                    _raise_openai_error(response)
+
+                return response.json()
+
+            raise RuntimeError("OpenAI API: przekroczono limit prób po wielokrotnych błędach 429 (rate limit)")
 
         def response_generator() -> Iterator[dict[str, Any]]:
-            with httpx.stream("POST", f"{OLLAMA_URL}/api/chat", json=payload, timeout=timeout) as response:
-                response.raise_for_status()
+            for attempt in range(_MAX_RATE_LIMIT_RETRIES):
+                try:
+                    stream_ctx = httpx.stream("POST", url, headers=_auth_headers(), json=payload, timeout=timeout)
+                    response = stream_ctx.__enter__()
+                except httpx.TransportError as e:
+                    if attempt < _MAX_RATE_LIMIT_RETRIES - 1:
+                        time.sleep(min(2 ** attempt, 30.0))
+                        continue
+                    raise RuntimeError(
+                        f"Nie udało się połączyć z OpenAI API po {_MAX_RATE_LIMIT_RETRIES} próbach "
+                        f"(błąd sieci/DNS): {e}"
+                    ) from e
 
-                for line in response.iter_lines():
-                    if not line:
+                try:
+                    if response.status_code == 429 and attempt < _MAX_RATE_LIMIT_RETRIES - 1:
+                        response.read()
+                        time.sleep(_seconds_until_retry(response, attempt))
                         continue
 
-                    yield json.loads(line)
+                    if response.status_code >= 400:
+                        # W trybie stream ciało nie jest jeszcze wczytane -- trzeba je
+                        # jawnie odczytać, inaczej raise_for_status()/nasz handler nie
+                        # zobaczy treści błędu zwróconej przez OpenAI.
+                        response.read()
+                        _raise_openai_error(response)
+
+                    for line in response.iter_lines():
+                        if not line or not line.startswith("data:"):
+                            continue
+
+                        data = line[len("data:"):].strip()
+
+                        if data == "[DONE]":
+                            return
+
+                        yield json.loads(data)
+
+                    return
+                finally:
+                    stream_ctx.__exit__(None, None, None)
+
+            raise RuntimeError("OpenAI API: przekroczono limit prób po wielokrotnych błędach 429 (rate limit)")
 
         return response_generator()
 
     def _execute_tool_calls(self, tool_calls: list[dict[str, Any]]) -> list[tuple[str, str]]:
         """
-        Executes tool calls requested by the model and appends results to message history
+        Executes tool calls requested by the model and appends results to message history.
+        Format tool_calls zgodny z OpenAI: [{"id", "type": "function", "function": {"name", "arguments": "<json str>"}}]
 
         :param tool_calls:
         :return: list of (tool_name, result_text) pairs
@@ -139,8 +284,18 @@ class ChatModel:
         results: list[tuple[str, str]] = []
 
         for call in tool_calls:
+            call_id = call.get("id", "")
             func_name = call["function"]["name"]
-            func_args = call["function"].get("arguments", {})
+            raw_args = call["function"].get("arguments", "{}") or "{}"
+
+            try:
+                func_args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+            except json.JSONDecodeError as e:
+                func_args = {}
+                result = f"Error: nie udało się sparsować argumentów narzędzia '{func_name}': {e}"
+                self.messages.append({"role": "tool", "tool_call_id": call_id, "content": result})
+                results.append((func_name, result))
+                continue
 
             if func_name in self.tool_functions:
                 try:
@@ -152,22 +307,25 @@ class ChatModel:
 
             self.messages.append({
                 "role": "tool",
-                # "tool_name": func_name,
-                "content": str(result)
+                "tool_call_id": call_id,
+                "content": str(result),
             })
 
             results.append((func_name, str(result)))
 
         return results
 
-    def ask(self, message: str, think: bool = False, max_tool_iterations: int = 8, options: dict[str, Any] | None = None) -> str:
+    def ask(self, message: str, think: bool = False, max_tool_iterations: int = 8,
+            options: dict[str, Any] | None = None) -> str:
         # Dodajemy / Tworzymy message, który wyślemy do modelu
         self._add_user_message(message)
 
         for _ in range(max_tool_iterations):
-            result = self._call_ollama(think=think, stream=False, options=options)
+            result = self._call_openai(think=think, stream=False, options=options)
 
-            answer_message = result.get("message", {})
+            choice = (result.get("choices") or [{}])[0]
+            answer_message = choice.get("message", {})
+
             if answer_message:
                 self.messages.append(answer_message)
 
@@ -178,7 +336,7 @@ class ChatModel:
                 continue
 
             self._end_assistant_turn()
-            content = answer_message.get("content", "")
+            content = answer_message.get("content", "") or ""
 
             return content
 
@@ -188,24 +346,19 @@ class ChatModel:
     def ask_stream(self, message: str, think: bool = False, max_tool_iterations: int = 8,
                    options: dict[str, Any] | None = None) -> Iterator[dict[str, str]]:
         """
-        Streams the conversation as a series of typed events:
-          {"type": "thinking", "text": "..."}   - fragment rozumowania modelu
+        Streams the conversation as a series of typed events (identyczny format jak wcześniej):
+          {"type": "thinking", "text": "..."}   - fragment rozumowania modelu (jeśli dostępne)
           {"type": "content", "text": "..."}    - fragment finalnej/pośredniej odpowiedzi tekstowej
           {"type": "tool_call", "name": "...", "arguments": {...}}  - model wywołuje narzędzie
           {"type": "tool_result", "name": "...", "result": "..."}   - wynik wykonania narzędzia
           {"type": "limit"}                     - osiągnięto max_tool_iterations
+          {"type": "done", "reason", "prompt_tokens", "eval_tokens"}
 
-        Example usage:
-
-        for event in chat.ask_stream("Dodaj Floriana...", think=True):
-            if event["type"] == "thinking":
-                print(f"\033[90m{event['text']}\033[0m", end="", flush=True)
-            elif event["type"] == "content":
-                print(event["text"], end="", flush=True)
-            elif event["type"] == "tool_call":
-                print(f"\n🔧 {event['name']}({event['arguments']})", flush=True)
-            elif event["type"] == "tool_result":
-                print(f"   ↳ {event['result']}", flush=True)
+        Uwaga: standardowe API Chat Completions OpenAI nie zwraca treści "myślenia" dla
+        modeli reasoningowych (o1/o3/gpt-5) -- token reasoningowe są liczone (usage), ale
+        ich treść nie jest streamowana. Zdarzenie "thinking" jest tu utrzymane dla
+        kompatybilności wstecznej oraz dla serwerów kompatybilnych z OpenAI, które
+        dodatkowo zwracają pole 'reasoning_content' w delcie (np. niektóre proxy).
 
         :param message:
         :param think:
@@ -217,49 +370,74 @@ class ChatModel:
         self._add_user_message(message)
 
         for _ in range(max_tool_iterations):
-            result = self._call_ollama(think=think, stream=True, options=options)
+            result = self._call_openai(think=think, stream=True, options=options)
 
-            stream_thinking, stream_answer = "", ""
-            tool_calls: list[dict[str, Any]] | None = None
-            answer_message: dict[str, Any] = {}
+            stream_answer = ""
+            tool_calls_acc: dict[int, dict[str, Any]] = {}
+            finish_reason: str | None = None
+            usage: dict[str, Any] = {}
 
             for chunk in result:
-                msg = chunk.get("message", {})
+                choices = chunk.get("choices") or []
 
-                thinking_piece = msg.get("thinking", "")
-                if thinking_piece:
-                    stream_thinking += thinking_piece
-                    yield {"type": "thinking", "text": thinking_piece}
+                if choices:
+                    delta = choices[0].get("delta", {})
 
-                content_piece = msg.get("content", "")
-                if content_piece:
-                    stream_answer += content_piece
-                    yield {"type": "content", "text": content_piece}
+                    thinking_piece = delta.get("reasoning_content", "") or delta.get("reasoning", "")
+                    if thinking_piece:
+                        yield {"type": "thinking", "text": thinking_piece}
 
-                if msg.get("tool_calls"):
-                    tool_calls = msg["tool_calls"]
+                    content_piece = delta.get("content", "")
+                    if content_piece:
+                        stream_answer += content_piece
+                        yield {"type": "content", "text": content_piece}
 
-                if chunk.get("done"):
-                    answer_message = {
-                        "role": "assistant",
-                        "content": stream_answer,
-                        **({"tool_calls": tool_calls} if tool_calls else {})
-                    }
+                    for tc_delta in delta.get("tool_calls", []) or []:
+                        idx = tc_delta.get("index", 0)
+                        acc = tool_calls_acc.setdefault(idx, {
+                            "id": "",
+                            "type": "function",
+                            "function": {"name": "", "arguments": ""},
+                        })
 
-                    yield {
-                        "type": "done",
-                        "reason": chunk.get("done_reason", "?"),
-                        "prompt_tokens": str(chunk.get("prompt_eval_count", "?")),
-                        "eval_tokens": str(chunk.get("eval_count", "?")),
-                    }
+                        if tc_delta.get("id"):
+                            acc["id"] = tc_delta["id"]
 
-            if answer_message:
-                self.messages.append(answer_message)
+                        fn_delta = tc_delta.get("function") or {}
+                        if fn_delta.get("name"):
+                            acc["function"]["name"] += fn_delta["name"]
+                        if fn_delta.get("arguments"):
+                            acc["function"]["arguments"] += fn_delta["arguments"]
+
+                    if choices[0].get("finish_reason"):
+                        finish_reason = choices[0]["finish_reason"]
+
+                if chunk.get("usage"):
+                    usage = chunk["usage"]
+
+            tool_calls = [tool_calls_acc[i] for i in sorted(tool_calls_acc)] if tool_calls_acc else None
+
+            answer_message: dict[str, Any] = {
+                "role": "assistant",
+                "content": stream_answer,
+                **({"tool_calls": tool_calls} if tool_calls else {}),
+            }
+            self.messages.append(answer_message)
+
+            yield {
+                "type": "done",
+                "reason": finish_reason or "?",
+                "prompt_tokens": str(usage.get("prompt_tokens", "?")),
+                "eval_tokens": str(usage.get("completion_tokens", "?")),
+            }
 
             if tool_calls:
                 for call in tool_calls:
                     func_name = call["function"]["name"]
-                    func_args = call["function"].get("arguments", { })
+                    try:
+                        func_args = json.loads(call["function"].get("arguments") or "{}")
+                    except json.JSONDecodeError:
+                        func_args = {}
 
                     yield {"type": "tool_call", "name": func_name, "arguments": func_args}
 
@@ -277,7 +455,8 @@ class ChatModel:
         yield {"type": "limit"}
 
     def pretty(self, message: str, think: bool = True, max_tool_iterations: int = 256):
-        for event in self.ask_stream(message, think=think, max_tool_iterations=max_tool_iterations, options={"temperature": 0.1, "top_p": 0.9, "num_predict": -1, "num_ctx": 163840}):
+        for event in self.ask_stream(message, think=think, max_tool_iterations=max_tool_iterations,
+                                      options={"temperature": 0.1, "top_p": 0.9, "num_predict": -1}):
             match event["type"]:
                 case "thinking":
                     print(f"\033[90m{event['text']}\033[0m", end="", flush=True)
@@ -296,11 +475,10 @@ class ChatModel:
     def clear(self) -> None:
         """
         Clears messages except for the initial system prompt
-
-        :return:
         """
 
         self.messages = [{"role": "system", "content": self.system}]
+
 
 class EmbedModel:
     __slots__ = ("model",)
@@ -320,7 +498,7 @@ class EmbedModel:
             "input": message,
         }
 
-        response = httpx.post(f"{OLLAMA_URL}/api/embed", json=payload, timeout=timeout)
+        response = httpx.post(f"http://localhost:11434/api/embed", json=payload, timeout=timeout)
 
         if response.status_code == 404:
             detail = response.text.strip()
@@ -333,17 +511,19 @@ class EmbedModel:
         response.raise_for_status()
 
         return response.json()["embeddings"]
-def langchain_tools_to_ollama_format(tools: list[BaseTool]) -> list[dict[str, Any]]:
+
+
+def langchain_tools_to_openai_format(tools: list[BaseTool]) -> list[dict[str, Any]]:
     """
-    Converts LangChain @tool-decorated functions into Ollama/OpenAI-style tool definitions
+    Converts LangChain @tool-decorated functions into OpenAI-style tool definitions
     """
 
-    ollama_tools: list[dict[str, Any]] = []
+    openai_tools: list[dict[str, Any]] = []
 
     for tool in tools:
         schema = tool.args_schema.model_json_schema() if tool.args_schema else {"type": "object", "properties": {}}
 
-        ollama_tools.append({
+        openai_tools.append({
             "type": "function",
             "function": {
                 "name": tool.name,
@@ -351,18 +531,18 @@ def langchain_tools_to_ollama_format(tools: list[BaseTool]) -> list[dict[str, An
                 "parameters": {
                     "type": "object",
                     "properties": schema.get("properties", {}),
-                    "required": schema.get("required", [])
-                }
-            }
+                    "required": schema.get("required", []),
+                },
+            },
         })
 
-    return ollama_tools
+    return openai_tools
+
 
 def langchain_tools_to_function_map(tools: list[BaseTool]) -> dict[str, Callable]:
-    function_map = { }
+    function_map = {}
 
     for tool in tools:
         function_map[tool.name] = lambda _tool=tool, **kwargs: _tool.invoke(kwargs)
 
     return function_map
-
