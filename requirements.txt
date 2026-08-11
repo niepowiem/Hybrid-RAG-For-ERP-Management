@@ -9,3 +9,4 @@ langchain-ollama
 neo4j
 neo4j_graphrag
 tqdm
+pytest
