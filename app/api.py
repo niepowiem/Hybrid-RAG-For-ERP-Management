@@ -22,7 +22,6 @@ from pydantic import BaseModel
 from app import graph
 from app.assistant import answer, get_index
 
-
 class AskRequest(BaseModel):
     question: str
     context: dict[str, Any] | None = None

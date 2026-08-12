@@ -57,7 +57,7 @@ def check_for_duplicates(documents: list[KB_DATATYPE]) -> None:
         for document in duplicates:
             print(f"Duplikat id: {document.id} ({type(document).__name__})", file=sys.stderr)
 
-        #raise SystemExit(f"{len(duplicates)} zduplikowanych id w bazie wiedzy")
+        raise SystemExit(f"{len(duplicates)} zduplikowanych id w bazie wiedzy")
 
 def ingest_llm(driver: Driver, model:str):
     print(1)
@@ -112,7 +112,3 @@ def ingest_llm(driver: Driver, model:str):
 
     print(result)
     print("\nGotowe!\nMożesz podglądać wyniki na: http://localhost:7474")
-
-if __name__ == "__main__":
-    data_documents = load_knowledge()
-    check_for_duplicates(data_documents)

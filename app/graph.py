@@ -886,7 +886,6 @@ class KnowledgeGraph:
     # SEARCH
     # ------------------------------------------------------------------
 
-    # TODO
     @classmethod
     def search_semantic(cls, driver: Driver, query_embedding: list[float], top_k: int = 5,
                         module: str | None = None, database: str = "neo4j",

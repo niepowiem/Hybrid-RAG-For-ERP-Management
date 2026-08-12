@@ -14,6 +14,8 @@ from abc import ABC, abstractmethod
 from dotenv import load_dotenv
 from langchain.tools import BaseTool
 
+REASONING_PREFIXES = ("o1", "o3", "o4", "gpt-5")
+
 def _require_env(name:str) -> str:
     """
     Funkcja wspomagająca ładowanie zmiennych z .env.
@@ -840,7 +842,6 @@ class _OpenWebUIAPI(_OllamaAPI):
 
 class ChatModel:
     __slots__ = ("api",)
-    REASONING_PREFIXES = ("o1", "o3", "o4", "gpt-5")
 
     PROVIDERS: dict[str, type[_LLMProviderAPI]] = {
         "openai": _OpenAIAPINonReasoning,
@@ -875,12 +876,12 @@ class ChatModel:
                                                      memory=memory,
                                                      tools=tools,
                                                      client=client)
-
-    def _identify_source(self, model: str) -> str:
+    @staticmethod
+    def _identify_source(model: str) -> str:
 
         lowered = model.lower()
 
-        if lowered.startswith(self.REASONING_PREFIXES):
+        if lowered.startswith(REASONING_PREFIXES):
             return "openai-responses"
 
         if lowered.startswith(("gpt-", "chatgpt")):
