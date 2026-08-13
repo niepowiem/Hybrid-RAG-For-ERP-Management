@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from app import graph
 from app.core import EMBED_MODEL, EmbedModel, EMBED_MODEL_DIM, PROJECT_ROOT
+from app.core_n import EmbeddingModel, ChatModel, EmbeddingResponse
 from app.graph import initialize_knowledge_graph, build_graph_with_ollama, print_graph
 from app.schema import Procedure, Error, Concept, KB_DATATYPE
 
@@ -87,6 +88,38 @@ def check_for_duplicates(documents: list[KB_DATATYPE]) -> None:
             print(f"Duplikat id: {document.id} ({type(document).__name__})", file=sys.stderr)
 
         raise SystemExit(f"{len(duplicates)} zduplikowanych id w bazie wiedzy")
+
+def _validate_embeddings(embed: EmbeddingModel, dim:int) -> bool:
+    embed_resp: EmbeddingResponse = embed.embed("TEST")
+
+    # Walidacja wymiaru wektora
+    if len(embed_resp.embeddings[0]) != dim:
+        raise RuntimeError(
+            f"EMBED_MODEL_DIM={dim}, ale model '{embed_resp.model}' "
+            f"zwraca wektory o wymiarze {len(embed_resp.embeddings[0])}. Popraw .env."
+        )
+
+    return True
+
+def ingest_procedural(driver: Driver, embed: EmbeddingModel, dim: int, validate: bool=True) -> None:
+    raise NotImplementedError("Not implemented Yet!")
+
+def ingest_llm(driver: Driver, chat: ChatModel, embed: EmbeddingModel, dim: int, validate: bool=True) -> None:
+    if validate:
+        _validate_embeddings(embed, dim=dim)
+
+    documents: list[KB_DATATYPE] = load_knowledge()
+    check_for_duplicates(documents)
+
+    # Sklej reprezentacje tekstowe wszystkich dokumentów
+    document_string: str = "\n\n".join(
+        [document.__repr__() for document in documents]
+    )
+
+    # TODO
+    # build_graph_with_ollama(model=model, documents=document_string)
+
+    # TODO
 
 # TODO: Trzeba najpierw zrobić graph_n.py
 # def ingest_llm(driver: Driver, model: str, validate:bool=True) -> None:

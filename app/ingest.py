@@ -60,7 +60,6 @@ def check_for_duplicates(documents: list[KB_DATATYPE]) -> None:
         raise SystemExit(f"{len(duplicates)} zduplikowanych id w bazie wiedzy")
 
 def ingest_llm(driver: Driver, model:str):
-    print(1)
     initialize_knowledge_graph()
 
     print(2)

@@ -454,7 +454,7 @@ class _LLMProviderAPI(ABC):
         if self.client_owner:
             self.client.close()
 
-class _OpenAIAPINonReasoning(_LLMProviderAPI):
+class _LLMOpenAIAPINonReasoning(_LLMProviderAPI):
     __slots__ = ()
 
     # URL end-pointu dla openai
@@ -473,9 +473,14 @@ class _OpenAIAPINonReasoning(_LLMProviderAPI):
     def _endpoint(self) -> str:
         return f"{self.BASE_URL}/chat/completions"
 
-    @staticmethod
-    def _provider_generation_options(options: GenerationOptions) -> dict[str, Any]:
+    def _provider_generation_options(self, options: GenerationOptions) -> dict[str, Any]:
         payload: dict[str, Any] = {"temperature": options.temperature, "top_p": options.top_p}
+
+        # Modele reasoning-podobne (o1/o3/o4/gpt-5*) nie akceptują własnej
+        # temperature/top_p nawet przez /chat/completions — tylko wartość domyślna.
+        if not self.model.lower().startswith(REASONING_PREFIXES):
+            payload["temperature"] = options.temperature
+            payload["top_p"] = options.top_p
 
         if options.max_response_tokens:
             payload["max_tokens"] = options.max_response_tokens
@@ -590,7 +595,7 @@ class _OpenAIAPINonReasoning(_LLMProviderAPI):
 
         return f"OK: OpenAI odpowiada, model '{self.model}' " + ("widoczny" if self.model in names else "Niewidoczny")
 
-class _OPENAIAPIReasoning(_OpenAIAPINonReasoning):
+class _LLMOPENAIAPIReasoning(_LLMOpenAIAPINonReasoning):
     __slots__ = ()
 
     @property
@@ -702,7 +707,7 @@ class _OPENAIAPIReasoning(_OpenAIAPINonReasoning):
             for item in output if item.get("type") == "function_call"
         ]
 
-class _OllamaAPI(_LLMProviderAPI):
+class _LLMOllamaAPI(_LLMProviderAPI):
     __slots__ = ()
 
     # URL end-pointu dla ollamy
@@ -822,7 +827,7 @@ class _OllamaAPI(_LLMProviderAPI):
 
         return f"OK: '{self.model}' dostępny"
 
-class _OpenWebUIAPI(_OllamaAPI):
+class _LLMOpenWebUIAPI(_LLMOllamaAPI):
     __slots__ = ()
     BASE_URL = f"{OPENWEBUI_URL.rstrip('/')}/ollama" if OPENWEBUI_URL else ""
 
@@ -844,10 +849,10 @@ class ChatModel:
     __slots__ = ("api",)
 
     PROVIDERS: dict[str, type[_LLMProviderAPI]] = {
-        "openai": _OpenAIAPINonReasoning,
-        "openai-responses": _OPENAIAPIReasoning,
-        "ollama": _OllamaAPI,
-        "openwebui": _OpenWebUIAPI,
+        "openai": _LLMOpenAIAPINonReasoning,
+        "openai-responses": _LLMOPENAIAPIReasoning,
+        "ollama": _LLMOllamaAPI,
+        "openwebui": _LLMOpenWebUIAPI,
     }
 
     def __init__(self, model: str,
@@ -876,6 +881,7 @@ class ChatModel:
                                                      memory=memory,
                                                      tools=tools,
                                                      client=client)
+
     @staticmethod
     def _identify_source(model: str) -> str:
 
@@ -900,8 +906,8 @@ class ChatModel:
         return self.api.history
 
     def ask(self, message: str, think: bool = False, max_tool_iterations: int = 8,
-            options: GenerationOptions | None = None) -> Iterator[dict[str, str]]:
-        return self.api.call(message, think, max_tool_iterations, options)
+            options: GenerationOptions | None = None) -> str:
+        return self.api.ask(message, think, max_tool_iterations, options)
 
     def check(self) -> str:
         checker = getattr(self.api, "check", None)
@@ -919,7 +925,14 @@ class ChatModel:
 
     def pretty(self, message: str, think: bool = True, max_tool_iterations: int = 256,
                options: GenerationOptions | None = None) -> None:
-        for event in self.ask(message, think, max_tool_iterations, options):
+        last_type: str = ''
+        for event in self.api.call(message, think, max_tool_iterations, options):
+            if last_type != event["type"]:
+                if last_type == 'thinking':
+                    print(f"\n", end="", flush=True)
+                print(f"\n", end="", flush=True)
+                last_type = event["type"]
+
             match event["type"]:
                 case "thinking":
                     print(f"\033[90m{event['text']}\033[0m", end="", flush=True)
@@ -930,7 +943,197 @@ class ChatModel:
                 case "tool_result":
                     print(f"   ↳ {event['result']}\n", flush=True)
                 case "limit":
-                    print("\n⚠️ Osiągnięto limit iteracji wywołań narzędzi.")
+                    print("⚠️ Osiągnięto limit iteracji wywołań narzędzi.")
                 case "done":
-                    print(f"\n\033[90m[done_reason={event['reason']}, "
+                    print(f"\033[90m[done_reason={event['reason']}, "
                           f"prompt={event['prompt_tokens']} tok, out={event['eval_tokens']} tok]\033[0m", flush=True)
+
+@dataclass(frozen=True, slots=True)
+class EmbeddingResponse:
+    """Znormalizowany wynik wektorowy (embedding) niezależny od providera."""
+
+    embeddings: list[list[float]]
+    model: str
+
+class _EmbeddingProviderAPI(ABC):
+    __slots__ = ("model", "client", "client_owner")
+
+    TIMEOUT: int = 60
+    MAX_RETRIES: int = 3
+
+    def __init__(self, model: str, client: httpx.Client | None = None) -> None:
+        self._check_required()
+
+        self.model: str = model
+
+        self.client_owner: bool = client is None
+        self.client: httpx.Client = client or httpx.Client(
+            timeout=httpx.Timeout(
+                connect=10.0, read=self.TIMEOUT, write=30.0, pool=10.0
+            )
+        )
+
+    @staticmethod
+    @abstractmethod
+    def _check_required():
+        """Sprawdza wymagane zmienne środowiskowe dla providera embed."""
+
+    @property
+    @abstractmethod
+    def _endpoint(self) -> str:
+        """URL end-pointu embeddingów."""
+
+    @abstractmethod
+    def _build_payload(self, texts: list[str]) -> dict[str, Any]:
+        """Buduje payload dla zapytania embeddingu."""
+
+    @abstractmethod
+    def _parse_response(self, response_data: dict[str, Any]) -> EmbeddingResponse:
+        """Parsuje odpowiedź JSON na znormalizowany obiekt EmbeddingResponse."""
+
+    @staticmethod
+    def _headers() -> dict[str, str]:
+        return {"Content-Type": "application/json"}
+
+    def call(self, texts: str | Iterable[str]) -> EmbeddingResponse:
+        """Generuje embeddingi dla pojedynczego tekstu lub listy tekstów."""
+
+        if isinstance(texts, str):
+            text_list = [texts]
+        else:
+            text_list = list(texts)
+
+        if not text_list:
+            raise ValueError("Lista tekstów do zakodowania nie może być pusta.")
+
+        payload = self._build_payload(text_list)
+        response = self.client.post(
+            self._endpoint, headers=self._headers(), json=payload
+        )
+
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"{type(self).__name__} zwróciło błąd {response.status_code}: {response.text}"
+            )
+
+        return self._parse_response(response.json())
+
+    def close_client(self) -> None:
+        if self.client_owner:
+            self.client.close()
+
+class _EmbeddingOpenAIAPI(_EmbeddingProviderAPI):
+    __slots__ = ()
+
+    BASE_URL: str = "https://api.openai.com/v1"
+
+    @staticmethod
+    def _check_required() -> None:
+        if not OPENAI_KEY:
+            raise ValueError("Brak OPENAI_KEY w pliku .env dla embeddingów OpenAI!")
+
+    @staticmethod
+    def _headers() -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {OPENAI_KEY}",
+            "Content-Type": "application/json",
+        }
+
+    @property
+    def _endpoint(self) -> str:
+        return f"{self.BASE_URL}/embeddings"
+
+    def _build_payload(self, texts: list[str]) -> dict[str, Any]:
+        return {"model": self.model, "input": texts}
+
+    def _parse_response(self, response_data: dict[str, Any]) -> EmbeddingResponse:
+        data = response_data.get("data", [])
+
+        # Sortowanie po indeksie, aby zachować oryginalną kolejkę tekstów
+        sorted_data = sorted(data, key=lambda x: x.get("index", 0))
+        embeddings = [item.get("embedding", []) for item in sorted_data]
+
+        return EmbeddingResponse(
+            embeddings=embeddings,
+            model=response_data.get("model", self.model)
+        )
+
+class _EmbeddingOllamaAPI(_EmbeddingProviderAPI):
+    __slots__ = ()
+
+    BASE_URL = OLLAMA_URL
+
+    def _check_required(self) -> None:
+        if not self.BASE_URL:
+            raise ValueError("Brak URL-a serwera Ollamy (OLLAMA_URL w .env).")
+
+    @property
+    def _endpoint(self) -> str:
+        return f"{self.BASE_URL}/api/embed"
+
+    def _build_payload(self, texts: list[str]) -> dict[str, Any]:
+        return {"model": self.model, "input": texts}
+
+    def _parse_response(self, response_data: dict[str, Any]) -> EmbeddingResponse:
+        embeddings = response_data.get("embeddings", [])
+        return EmbeddingResponse(
+            embeddings=embeddings,
+            model=response_data.get("model", self.model)
+        )
+
+class _EmbeddingOpenWebUIAPI(_EmbeddingOllamaAPI):
+    __slots__ = ()
+    BASE_URL = f"{OPENWEBUI_URL.rstrip('/')}/ollama" if OPENWEBUI_URL else ""
+
+    def _check_required(self) -> None:
+        if not OPENWEBUI_URL:
+            raise ValueError("Brak OPENWEBUI_URL w .env!")
+        if not OPENWEBUI_KEY:
+            raise ValueError("Brak OPENWEBUI_KEY w .env!")
+
+    @staticmethod
+    def _headers() -> dict[str, str]:
+        return {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {OPENWEBUI_KEY}",
+        }
+
+class EmbeddingModel:
+    __slots__ = ("api",)
+
+    PROVIDERS: dict[str, type[_EmbeddingProviderAPI]] = {
+        "openai": _EmbeddingOpenAIAPI,
+        "ollama": _EmbeddingOllamaAPI,
+        "openwebui": _EmbeddingOpenWebUIAPI,
+    }
+
+    def __init__(self, model: str, provider: str | None = None, client: httpx.Client | None = None) -> None:
+        selected_provider = provider or self._identify_source(model)
+
+        if selected_provider not in self.PROVIDERS:
+            raise ValueError(
+                f"Nieznany provider embeddingów '{selected_provider}'. Dostępne: {sorted(self.PROVIDERS)}"
+            )
+
+        self.api = self.PROVIDERS[selected_provider](
+            model=model, client=client
+        )
+
+    @staticmethod
+    def _identify_source(model: str) -> str:
+        lowered = model.lower()
+        if "text-embedding" in lowered or lowered.startswith("ada-"):
+            return "openai"
+
+        if ":" in lowered or "embed" in lowered:
+            return "ollama"
+
+        raise ValueError(
+            f"Nie umiem rozpoznać providera embeddingów dla modelu '{model}'. Podaj jawnie parametr 'provider'."
+        )
+
+    def embed(self, texts: str | Iterable[str]) -> EmbeddingResponse:
+        return self.api.call(texts)
+
+    def close_client(self) -> None:
+        self.api.close_client()

@@ -333,6 +333,7 @@ class EmbedModel:
         response.raise_for_status()
 
         return response.json()["embeddings"]
+
 def langchain_tools_to_ollama_format(tools: list[BaseTool]) -> list[dict[str, Any]]:
     """
     Converts LangChain @tool-decorated functions into Ollama/OpenAI-style tool definitions
