@@ -1,50 +1,78 @@
-from pydantic import BaseModel, Field, field_validator, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing import Any, Literal
 import re
 
+# ============================== AKCJE AUTOPILOTA ==============================
+# Unia dyskryminowana po polu 'kind'. Odpowiada jeden do jednego typowi
+# AssistantAction z packages/shared/src/assistant.ts -- gdy zmienia się tam,
+# musi zmienić się tutaj, inaczej front dostanie akcję, której nie umie wykonać.
+#
+# 'anchor' jest opcjonalny w każdym wariancie, bo w YAML-u nie dublujemy go:
+# akcja dziedziczy anchor kroku (robi to 'parse_action' w plan.py).
+
 class NavigateAction(BaseModel):
     kind: Literal["navigate"]                       # Autopilot przechodzi pod wskazaną trasę
-    route: str                                      # Ścieżka w aplikacji np.: /purchase-orders
+    route: str                                      # Ścieżka w aplikacji, np. /purchase-orders
 
 class ClickAction(BaseModel):
     kind: Literal["click"]                          # Autopilot klika w element
-    anchor: str | None = None                       # Anchor wskazuje na obiekt strony, który następnie podświetlimy lub wykonamy na nim akcję
+    anchor: str | None = None                       # Domyślnie anchor kroku
 
 class FillAction(BaseModel):
     kind: Literal["fill"]                           # Autopilot wpisuje USTALONĄ wartość
-    anchor: str | None = None                       # Anchor wskazuje na obiekt strony, który następnie podświetlimy lub wykonamy na nim akcję
+    anchor: str | None = None
     value: str                                      # Wartość wpisywana dosłownie
 
 class SelectAction(BaseModel):
     kind: Literal["select"]                         # Autopilot wybiera pozycję z listy
-    anchor: str | None = None                       # Anchor wskazuje na obiekt strony, który następnie podświetlimy lub wykonamy na nim akcję
+    anchor: str | None = None
     label: str                                      # Etykieta opcji; front mapuje ją na wartość techniczną
 
 class AskAction(BaseModel):
     """
     Autopilot ZATRZYMUJE SIĘ i pyta użytkownika o wartość, zamiast wpisywać
-    ustaloną. Używaj wszędzie, gdzie wartość zależy od użytkownika (ilość, numer faktury, wybór kontrahenta)
-
-    'fill' zostaw dla wartości wynikających z procedury (np. filtr, który ma być ustawiony konkretnie)
+    ustaloną. Używaj wszędzie, gdzie wartość zależy od użytkownika (ilość, numer
+    faktury, wybór kontrahenta) -- 'fill' zostaw dla wartości wynikających
+    z procedury (np. filtr, który ma być ustawiony konkretnie).
     """
 
     model_config = ConfigDict(populate_by_name=True)
 
-    kind: Literal["ask"]                            # Autopilot zadaje pytanie
-    anchor: str | None = None                       # Anchor wskazuje na obiekt strony, który następnie podświetlimy lub wykonamy na nim akcję
+    kind: Literal["ask"]
+    anchor: str | None = None
     input_type: Literal["text", "number", "date", "select"] = Field(alias="inputType")
-    label: str                                      # Pytanie zadawane użytkownikowi, np.: "Ile sztuk zamawiasz?"
+    label: str                                      # Pytanie zadawane użytkownikowi, np. "Ile sztuk zamawiasz?"
     hint: str | None = None                         # Wyjaśnienie, czym jest to pole i jak je wypełnić
+    suggestions: list[str] = []                     # Propozycje wartości do kliknięcia. Dla 'select' zostaw puste -- opcje front czyta z żywej listy na stronie
 
-# Pole action w kroku. Pydantic wybiera wartości po kind
-# Warianty wymagające elementu na stronie. 'navigate' jako jedyny go nie potrzebuje
-STEP_ACTION = NavigateAction | ClickAction | FillAction | SelectAction | AskAction
-ACTIONS_REQUIRING_ANCHOR: tuple[str, ...] = ("click", "fill", "select", "ask")
+class ManualAction(BaseModel):
+    """
+    Czynność, której autopilot NIE MOŻE wykonać za użytkownika, bo wymaga jego
+    decyzji: który wiersz tabeli otworzyć, ile pozycji wpisać, jakie stawki VAT
+    poprawić. Autopilot podświetla element, tłumaczy i czeka na "Kontynuuj".
+
+    Bez tego wariantu takie kroki były po cichu pomijane -- procedura kończyła
+    się błędem walidacji, którego nie dało się powiązać z pominiętym polem.
+    """
+
+    kind: Literal["manual"]
+    anchor: str | None = None                       # Element do podświetlenia; domyślnie anchor kroku
+    label: str                                      # Co użytkownik ma zrobić, np. "Otwórz właściwy dokument"
+    hint: str | None = None                         # Na co zwrócić uwagę przy wyborze
+
+# Pole 'action' w kroku. Pydantic wybiera wariant po wartości 'kind'.
+STEP_ACTION = NavigateAction | ClickAction | FillAction | SelectAction | AskAction | ManualAction
+
+# Warianty wymagające elementu na stronie -- 'navigate' jako jedyny go nie potrzebuje.
+_ACTIONS_REQUIRING_ANCHOR: tuple[str, ...] = ("click", "fill", "select", "ask", "manual")
+
+
+# ================================== PROCEDURY =================================
 
 class ProcedureStep(BaseModel):
     text: str = Field(min_length=3)                 # Text opisuje dany krok np.: 1. Przejdź do modułu "Zakupy"
     anchor: str | None = None                       # Anchor wskazuje na obiekt strony, który następnie podświetlimy lub wykonamy na nim akcję
-    action: STEP_ACTION | None = Field(default=None, discriminator="kind")
+    action: STEP_ACTION | None = Field(default=None, discriminator="kind")   # Action mówi autopilotowi, co ma zrobić z podanym wyżej anchorem
     note: str | None = None                         # Note to uwaga poboczna dla użytkownika widziana pod Text
     optional: bool = False                          # Optional oznacza krok warunkowy ("jeśli..."): planer nie traktuje jego 'requires' jako wymagań całej procedury i nie użyje go do osiągnięcia celu
     requires: list[str] = []                        # Requires mówi modelowi, co potrzeba do wykonania kroku
@@ -53,27 +81,28 @@ class ProcedureStep(BaseModel):
 
     @model_validator(mode="after")
     def _check_anchor(self) -> "ProcedureStep":
-        # Akcja bez elementu docelowego jest niewykonalna: autopilot nie ma w co kliknąć
-        # Łapiemy to przy wczytywaniu korpusu, a nie w przeglądarce.
-        if self.action is not None and self.action.kind in ACTIONS_REQUIRING_ANCHOR:
+        # Akcja bez elementu docelowego jest niewykonalna: autopilot nie ma w co
+        # kliknąć. Łapiemy to przy wczytywaniu korpusu, a nie w przeglądarce.
+        if self.action is not None and self.action.kind in _ACTIONS_REQUIRING_ANCHOR:
             if not (getattr(self.action, "anchor", None) or self.anchor):
-                raise ValueError(f"Krok '{self.text[:40]}' ma akcję '{self.action.kind}' bez anchora!"
-                                 f"Podaj 'anchor' w kroku albo w akcji")
+                raise ValueError(f"Krok '{self.text[:40]}' ma akcję '{self.action.kind}' "
+                                 f"bez anchora -- podaj 'anchor' w kroku albo w akcji")
 
         return self
 
+
 class Procedure(BaseModel):
-    id: str                                         # Z niego powstaje nazwa węzła np.:proc.magazyn.pz -> proc_magazyn_pz
-    title: str                                      # Tytuł dla użytkownika, podawany modelowi przy wyborze procedury
-    module: str                                     # Pole systemowe grafu. Po nim filtrowane jest wyszukiwanie
-    summary: str = Field(min_length=16)             # Trafia do embedding-u, więc decyduje o trafności wyszukiwania
-    query: list[str] = []                           # Sformułowania, jakimi użytkownik może zapytać (tylko wyszukiwanie)
-    preconditions: list[str] = []                   # Warunki wstępne po ludzku. Wersja maszynowa to requires na krokach
-    roles: list[str] = []                           # Dziś tylko wyszukiwanie. Twardy wymóg zapisuje się jako stan (rola.kierownik)
-    steps: list[ProcedureStep] = Field(min_length=1)# Kroki do podążania dla autopilota
+    id: str                                         # Identyfikator dokumentu; z niego powstaje nazwa węzła w grafie (proc.magazyn.pz -> proc_magazyn_pz)
+    title: str                                      # Tytuł widoczny dla użytkownika i podawany modelowi przy wyborze procedury
+    module: str                                     # Moduł ERP; pole SYSTEMOWE grafu -- po nim filtrowane jest wyszukiwanie
+    summary: str = Field(min_length=16)             # Streszczenie: czego procedura dotyczy. Trafia do embeddingu, więc decyduje o trafności wyszukiwania
+    query: list[str] = []                           # Sformułowania, jakimi użytkownik może o to zapytać. Wyłącznie do wyszukiwania semantycznego
+    preconditions: list[str] = []                   # Warunki wstępne opisane po ludzku, dla użytkownika. Wersja maszynowa to 'requires' na krokach
+    roles: list[str] = []                           # Role, które mogą wykonać procedurę. Dziś tylko do wyszukiwania; twardy wymóg zapisuje się jako stan (np. rola.kierownik)
+    steps: list[ProcedureStep] = Field(min_length=1) # Kroki w kolejności redakcyjnej. Węzły Krok tworzy attach_steps_from_documents, nie LLM
+    goal: list[str] = []                            # Stany oznaczające, że procedura się udała. KONIUNKCJA -- planer musi osiągnąć wszystkie
     verification: str | None = None                 # Po czym użytkownik pozna, że się udało
-    common_errors: list[str] = []                   # Z nich powstają powiązania błąd -> procedura naprawcza
-    goal: list[str] = []                            # Stany oznaczające, że procedura się udała. Planer musi osiągnąć wszystkie stany
+    common_errors: list[str] = []                   # Kody błędów typowych dla tej procedury; z nich powstają powiązania błąd -> procedura naprawcza
 
     @field_validator("id")
     @classmethod
@@ -85,18 +114,21 @@ class Procedure(BaseModel):
 
     @model_validator(mode="after")
     def _check_goal_reachable(self) -> "Procedure":
-        # Cel, którego żaden krok nie wytwarza, jest nieosiągalny
-        # Planer zgłosiłby to dopiero przy pierwszym zapytaniu użytkownika
-        procedure = {stan for step in self.steps for stan in step.provides}
+        # Cel, którego żaden krok nie wytwarza, jest nieosiągalny -- planer
+        # zgłosiłby to dopiero przy pierwszym zapytaniu użytkownika.
+        wytwarzane = {stan for step in self.steps for stan in step.provides}
 
-        if missing := set(self.goal) - procedure:
-            raise ValueError(f"Procedura {self.id}: cel {sorted(missing)} nie jest "
+        if brakujace := set(self.goal) - wytwarzane:
+            raise ValueError(f"Procedura {self.id}: cel {sorted(brakujace)} nie jest "
                              f"wytwarzany przez żaden krok (sprawdź pola 'provides')")
 
         return self
 
     def __repr__(self):
         return str(self.model_dump(exclude_none=True))
+
+
+# =================================== BŁĘDY ====================================
 
 class ErrorSolution(BaseModel):
     solution: list[str] = Field(min_length=1)       # Kroki rozwiązania opisane po ludzku
@@ -105,9 +137,9 @@ class ErrorSolution(BaseModel):
 class Error(BaseModel):
     id: str                                         # Kod błędu w formacie ERR-xxxx; z niego powstaje nazwa węzła (ERR-1004 -> ERR_1004)
     module: str                                     # Moduł ERP, w którym błąd występuje
-    query: str                                      # Komunikat o błędzie widziany przez użytkownika. Główny tekst do wyszukiwania
-    causes: list[str] = Field(min_length=1)         # Możliwe przyczyny. To je asystent tłumaczy użytkownikowi
-    solutions: list[ErrorSolution] = []             # Warianty rozwiązania. Każdy może wskazywać procedurę naprawczą
+    query: str                                      # Komunikat błędu widziany przez użytkownika. Główny tekst do wyszukiwania
+    causes: list[str] = Field(min_length=1)         # Możliwe przyczyny -- to je asystent tłumaczy użytkownikowi
+    solutions: list[ErrorSolution] = []             # Warianty rozwiązania; każdy może wskazywać procedurę naprawczą
 
     @field_validator("id")
     @classmethod
@@ -120,11 +152,14 @@ class Error(BaseModel):
     def __repr__(self):
         return str(self.model_dump(exclude_none=True))
 
+
+# ================================== POJĘCIA ===================================
+
 class Concept(BaseModel):
     id: str                                         # Identyfikator w formacie concept.nazwa
     module: str                                     # Moduł ERP, którego pojęcie dotyczy
     title: str                                      # Nazwa pojęcia, np. "Indeks produktu (SKU)"
-    aliases: list[str]                              # Synonimy i potoczne określenia, po których użytkownik faktycznie pyta
+    aliases: list[str]                              # Synonimy i potoczne określenia -- po nich użytkownik faktycznie pyta
     body: str = Field(min_length=32)                # Wyjaśnienie pojęcia. To ono trafia do odpowiedzi, gdy pytanie nie dotyczy procedury
 
     @field_validator("id")
@@ -138,9 +173,11 @@ class Concept(BaseModel):
     def __repr__(self):
         return str(self.model_dump(exclude_none=True))
 
+
 # Typ dokumentu bazy wiedzy. Wszystkie trzy klasy trafiają do grafu i do
 # wyszukiwania semantycznego, ale tylko Procedure ma kroki dla autopilota.
 KB_DATATYPE = Procedure | Error | Concept
+
 
 def prepare_for_vector_embedding(document: KB_DATATYPE) -> str:
     """
@@ -176,6 +213,7 @@ def prepare_for_vector_embedding(document: KB_DATATYPE) -> str:
         raise ValueError(f"document type: ({type(document)}) is not of KB_DATATYPE")
 
     return '\n'.join(output)
+
 
 def prepare_for_lexical_search(document: KB_DATATYPE) -> str:
     """
@@ -226,6 +264,7 @@ def prepare_for_lexical_search(document: KB_DATATYPE) -> str:
         raise ValueError(f"document type: ({type(document)}) is not of KB_DATATYPE")
 
     return '\n'.join(output)
+
 
 def prepare_for_prompt(document: KB_DATATYPE) -> str:
     """

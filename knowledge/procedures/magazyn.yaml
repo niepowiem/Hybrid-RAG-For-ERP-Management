@@ -28,12 +28,20 @@
       note: Po zapisaniu typu nie da się zmienić
     - text: W polu Dostawca wybierz kontrahenta, od którego przyjmujesz towar
       anchor: field.counterparty
-      action: { kind: select, label: "Stalmex" }
+      action:
+        kind: ask
+        inputType: select
+        label: Którego kontrahenta wybierasz?
+        hint: Przy PZ to dostawca, od którego przyjmujesz towar; przy WZ odbiorca, do którego wydajesz. Lista pokazuje tylko kontrahentów aktywnych i o właściwym rodzaju.
       requires: [dokument.nowy]
       provides: [dokument.kontrahent]
     - text: W sekcji Magazyny wybierz Magazyn docelowy
       anchor: field.warehouse-to
-      action: { kind: select, label: "MAG-GL" }
+      action:
+        kind: ask
+        inputType: select
+        label: Na który magazyn przyjmujesz towar?
+        hint: Magazyn docelowy — to na nim wzrośnie stan. Przy MM musi być inny niż źródłowy.
       requires: [dokument.nowy]
       provides: [dokument.magazyn-docelowy]
     - text: Przejdź na zakładkę Pozycje
@@ -48,13 +56,22 @@
       provides: [pozycja.nowa]
     - text: Wybierz produkt z listy
       anchor: field.line-product
-      action: { kind: select, label: "SR-M8-100" }
+      action:
+        kind: ask
+        inputType: select
+        label: Który produkt dodajesz?
+        hint: Lista pokazuje tylko produkty aktywne. Cena podpowie się z kartoteki po wybraniu.
       requires: [pozycja.nowa]
       provides: [pozycja.produkt]
       note: Cena podpowiada się automatycznie z kartoteki produktu
     - text: Wpisz ilość w pole pozycji
       anchor: field.line-quantity
-      action: { kind: fill, value: "100" }
+      action:
+        kind: ask
+        inputType: number
+        label: Ile sztuk?
+        hint: Ilość w jednostce z kartoteki produktu. To ona wprost zmieni stan magazynowy po zatwierdzeniu.
+        suggestions: ["1", "10", "100"]
       requires: [pozycja.produkt]
       provides: [pozycja.ilosc]
     - text: Kliknij Zatwierdź dokument
@@ -97,12 +114,20 @@
       note: Po zapisaniu typu nie da się zmienić
     - text: W polu Odbiorca wybierz kontrahenta, do którego wydajesz towar
       anchor: field.counterparty
-      action: { kind: select, label: "Stalmex" }
+      action:
+        kind: ask
+        inputType: select
+        label: Którego kontrahenta wybierasz?
+        hint: Przy PZ to dostawca, od którego przyjmujesz towar; przy WZ odbiorca, do którego wydajesz. Lista pokazuje tylko kontrahentów aktywnych i o właściwym rodzaju.
       requires: [dokument.nowy]
       provides: [dokument.kontrahent]
     - text: W sekcji Magazyny wybierz Magazyn źródłowy
       anchor: field.warehouse-from
-      action: { kind: select, label: "MAG-GL" }
+      action:
+        kind: ask
+        inputType: select
+        label: Z którego magazynu wydajesz towar?
+        hint: Magazyn źródłowy — to na nim spadnie stan po zatwierdzeniu. Musi mieć wystarczającą ilość, inaczej zatwierdzenie zwróci ERR-1004.
       requires: [dokument.nowy]
       provides: [dokument.magazyn-zrodlowy]
     - text: Przejdź na zakładkę Pozycje
@@ -117,13 +142,22 @@
       provides: [pozycja.nowa]
     - text: Wybierz produkt z listy
       anchor: field.line-product
-      action: { kind: select, label: "SR-M8-100" }
+      action:
+        kind: ask
+        inputType: select
+        label: Który produkt dodajesz?
+        hint: Lista pokazuje tylko produkty aktywne. Cena podpowie się z kartoteki po wybraniu.
       requires: [pozycja.nowa]
       provides: [pozycja.produkt]
       note: Cena podpowiada się automatycznie z kartoteki produktu
     - text: Wpisz ilość w pole pozycji
       anchor: field.line-quantity
-      action: { kind: fill, value: "10" }
+      action:
+        kind: ask
+        inputType: number
+        label: Ile sztuk?
+        hint: Ilość w jednostce z kartoteki produktu. To ona wprost zmieni stan magazynowy po zatwierdzeniu.
+        suggestions: ["1", "10", "100"]
       requires: [pozycja.produkt]
       provides: [pozycja.ilosc]
       note: Jeśli ilość przekroczy stan magazynu, dokumentu nie da się zatwierdzić
@@ -167,12 +201,20 @@
       note: Po zapisaniu typu nie da się zmienić
     - text: W sekcji Magazyny wybierz Magazyn źródłowy
       anchor: field.warehouse-from
-      action: { kind: select, label: "MAG-GL" }
+      action:
+        kind: ask
+        inputType: select
+        label: Z którego magazynu wydajesz towar?
+        hint: Magazyn źródłowy — to na nim spadnie stan po zatwierdzeniu. Musi mieć wystarczającą ilość, inaczej zatwierdzenie zwróci ERR-1004.
       requires: [dokument.nowy]
       provides: [dokument.magazyn-zrodlowy]
     - text: Wybierz inny Magazyn docelowy
       anchor: field.warehouse-to
-      action: { kind: select, label: "MAG-PROD" }
+      action:
+        kind: ask
+        inputType: select
+        label: Na który magazyn przyjmujesz towar?
+        hint: Magazyn docelowy — to na nim wzrośnie stan. Przy MM musi być inny niż źródłowy.
       requires: [dokument.magazyn-zrodlowy]
       provides: [dokument.magazyn-docelowy]
       note: Pole Kontrahent jest przy MM nieaktywne i to jest normalne
@@ -188,13 +230,22 @@
       provides: [pozycja.nowa]
     - text: Wybierz produkt z listy
       anchor: field.line-product
-      action: { kind: select, label: "SR-M8-100" }
+      action:
+        kind: ask
+        inputType: select
+        label: Który produkt dodajesz?
+        hint: Lista pokazuje tylko produkty aktywne. Cena podpowie się z kartoteki po wybraniu.
       requires: [pozycja.nowa]
       provides: [pozycja.produkt]
       note: Cena podpowiada się automatycznie z kartoteki produktu
     - text: Wpisz ilość w pole pozycji
       anchor: field.line-quantity
-      action: { kind: fill, value: "25" }
+      action:
+        kind: ask
+        inputType: number
+        label: Ile sztuk?
+        hint: Ilość w jednostce z kartoteki produktu. To ona wprost zmieni stan magazynowy po zatwierdzeniu.
+        suggestions: ["1", "10", "100"]
       requires: [pozycja.produkt]
       provides: [pozycja.ilosc]
     - text: Kliknij Zapisz szkic
@@ -235,7 +286,11 @@
       provides: [ekran.stany]
     - text: Wpisz indeks lub nazwę produktu w pole wyszukiwania
       anchor: field.filter-search
-      action: { kind: fill, value: "SR-M8-100" }
+      action:
+        kind: ask
+        inputType: text
+        label: Czego szukasz?
+        hint: Wpisz indeks (np. SR-M8-100) albo fragment nazwy produktu.
       requires: [ekran.stany]
       provides: [stany.wyszukane]
     - text: Aby zobaczyć tylko braki, zaznacz filtr tylko poniżej minimum
@@ -265,11 +320,20 @@
       provides: [ekran.stany]
     - text: W filtrze Magazyn wybierz interesujący Cię magazyn
       anchor: field.filter-warehouse
-      action: { kind: select, label: "MAG-GL" }
+      action:
+        kind: ask
+        inputType: select
+        label: Który magazyn Cię interesuje?
+        hint: Zostaw Wszystkie, jeśli nie chcesz zawężać widoku.
       requires: [ekran.stany]
       provides: [stany.filtr-magazyn]
     - text: W filtrze Kategoria wybierz grupę produktów
       anchor: field.filter-category
+      action:
+        kind: ask
+        inputType: select
+        label: Która kategoria produktów?
+        hint: Zostaw Wszystkie, jeśli nie chcesz zawężać widoku.
       requires: [ekran.stany]
       provides: [stany.filtr-kategoria]
       note: Pozostaw Wszystkie, jeśli nie chcesz zawężać po kategorii
@@ -310,6 +374,10 @@
       provides: [dok.filtr-status]
     - text: Otwórz właściwy dokument klikając jego numer w tabeli
       anchor: table.documents
+      action:
+        kind: manual
+        label: Otwórz właściwy dokument, klikając jego numer
+        hint: Wybierz dokument, którego dotyczy Twoje zadanie. Kolumny są sortowalne po kliknięciu nagłówka.
       requires: [dok.filtr-typ]
       provides: [dok.lista-przefiltrowana]
       note: Nagłówki kolumn sortują tabelę po kliknięciu
@@ -362,7 +430,12 @@
       provides: [dokument.naglowek-otwarty]
     - text: W polu Numer obcy wpisz numer nadany przez kontrahenta
       anchor: field.external-number
-      action: { kind: fill, value: "FV 2026/08/114" }
+      action:
+        kind: ask
+        inputType: text
+        label: Jaki numer nadał kontrahent?
+        hint: Numer faktury lub listu przewozowego od dostawcy. Po nim później odszukasz dokument na liście.
+        suggestions: [FV 2026/08/1, ZAM/882]
       requires: [dokument.naglowek-otwarty]
       provides: [dokument.numer-obcy]
       note: Po tym numerze można później wyszukać dokument na liście
@@ -412,7 +485,11 @@
       provides: [zakladka.pozycje]
     - text: W kolumnie Lokalizacja wybierz adres składowania dla pozycji
       anchor: field.line-location
-      action: { kind: select, label: "A-01" }
+      action:
+        kind: ask
+        inputType: select
+        label: Na której lokalizacji składujesz towar?
+        hint: Adres w magazynie w układzie regał-poziom, np. A-01. Pole opcjonalne.
       requires: [pozycja.produkt]
       provides: [pozycja.lokalizacja]
       note: Pole jest opcjonalne — puste oznacza brak wskazanej lokalizacji
@@ -437,7 +514,11 @@
       provides: [zakladka.pozycje]
     - text: W kolumnie Cena netto wpisz cenę z dokumentu kontrahenta
       anchor: field.line-price
-      action: { kind: fill, value: "12.50" }
+      action:
+        kind: ask
+        inputType: number
+        label: Jaka cena netto za jednostkę?
+        hint: Podpowiada się cena ewidencyjna z kartoteki. Nadpisz ją, jeśli faktura dostawcy mówi inaczej.
       requires: [pozycja.produkt]
       provides: [pozycja.cena]
       note: Cena podpowiada się z kartoteki tylko przy pustym polu
@@ -463,7 +544,11 @@
       provides: [ekran.produkty]
     - text: Wpisz indeks lub nazwę w pole wyszukiwania
       anchor: field.product-search
-      action: { kind: fill, value: "SR-M8-100" }
+      action:
+        kind: ask
+        inputType: text
+        label: Którego produktu szukasz?
+        hint: Wpisz indeks albo fragment nazwy.
       requires: [ekran.produkty]
       provides: [produkt.wyszukany]
     - text: Odczytaj dane produktu w tabeli
@@ -498,34 +583,60 @@
       provides: [produkt.formularz]
     - text: Wpisz indeks produktu
       anchor: field.product-sku
-      action: { kind: fill, value: "SR-M10-120" }
+      action:
+        kind: ask
+        inputType: text
+        label: Jaki indeks ma mieć produkt?
+        hint: Unikalny w całej kartotece, np. SR-M10-120. Duplikat zwróci ERR-8001.
+        suggestions: [SR-M10-120, NK-M10, PL-ST-3MM]
       requires: [produkt.formularz]
       provides: [produkt.indeks]
       note: Indeks musi być unikalny w całej kartotece
     - text: Wpisz pełną nazwę produktu
       anchor: field.product-name
-      action: { kind: fill, value: "Śruba M10 x 120 DIN 933" }
+      action:
+        kind: ask
+        inputType: text
+        label: Jak nazywa się produkt?
+        hint: Pełna nazwa handlowa lub katalogowa, np. Śruba M10 x 120 DIN 933.
       requires: [produkt.formularz]
       provides: [produkt.nazwa]
     - text: Wybierz jednostkę miary
       anchor: field.product-unit
-      action: { kind: select, label: "szt" }
+      action:
+        kind: ask
+        inputType: select
+        label: W jakiej jednostce mierzysz ten produkt?
+        hint: Jednostka jest stała dla produktu i pojawia się na wszystkich dokumentach.
       requires: [produkt.formularz]
       provides: [produkt.jednostka]
     - text: Wybierz kategorię produktu
       anchor: field.product-category
-      action: { kind: select, label: "Złączne" }
+      action:
+        kind: ask
+        inputType: select
+        label: Do której kategorii należy produkt?
+        hint: Kategoria służy do filtrowania kartoteki i stanów.
       requires: [produkt.formularz]
       provides: [produkt.kategoria]
     - text: Podaj stan minimalny
       anchor: field.product-min-stock
-      action: { kind: fill, value: "500" }
+      action:
+        kind: ask
+        inputType: number
+        label: Jaki ma być stan minimalny?
+        hint: Poniżej tej ilości stan świeci się na czerwono w widoku Stany magazynowe. Zero wyłącza ostrzeżenie.
+        suggestions: ["0", "50", "500"]
       requires: [produkt.formularz]
       provides: [produkt.stan-min]
       note: Poniżej tej ilości stan świeci się na czerwono w widoku Stany magazynowe
     - text: Podaj cenę ewidencyjną
       anchor: field.product-price
-      action: { kind: fill, value: "0.55" }
+      action:
+        kind: ask
+        inputType: number
+        label: Jaka jest cena ewidencyjna?
+        hint: Podpowiada się na pozycjach dokumentów i służy do wyceny zapasu.
       requires: [produkt.formularz]
       provides: [produkt.cena]
       note: Ta cena podpowiada się później na pozycjach dokumentów
@@ -559,7 +670,11 @@
       provides: [ekran.produkty]
     - text: Znajdź produkt wpisując indeks lub nazwę w pole wyszukiwania
       anchor: field.product-search
-      action: { kind: fill, value: "OL-HYD-46" }
+      action:
+        kind: ask
+        inputType: text
+        label: Którego produktu szukasz?
+        hint: Wpisz indeks albo fragment nazwy.
       requires: [ekran.produkty]
       provides: [produkt.wyszukany]
     - text: Kliknij Wycofaj w wierszu produktu
@@ -630,6 +745,10 @@
       provides: [dok.filtr-status]
     - text: Otwórz szkic klikając jego numer w tabeli
       anchor: table.documents
+      action:
+        kind: manual
+        label: Otwórz właściwy dokument, klikając jego numer
+        hint: Wybierz dokument, którego dotyczy Twoje zadanie. Kolumny są sortowalne po kliknięciu nagłówka.
       requires: [dok.filtr-status]
       provides: [dokument.nowy]
       note: Zatwierdzonego dokumentu nie da się edytować — system zwróci ERR-1002

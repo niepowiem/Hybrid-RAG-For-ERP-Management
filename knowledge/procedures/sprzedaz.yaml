@@ -22,22 +22,39 @@
       provides: [zs.nowe]
     - text: W polu Odbiorca wybierz klienta, który składa zamówienie
       anchor: field.so-customer
-      action: { kind: select, label: "Metalpol" }
+      action:
+        kind: ask
+        inputType: select
+        label: Który klient składa zamówienie?
+        hint: Lista pokazuje tylko odbiorców — dostawcy są ukryci.
       requires: [zs.nowe]
       provides: [zs.odbiorca]
       note: Lista pokazuje tylko odbiorców — dostawcy są ukryci
     - text: W polu Magazyn wydania wybierz, z którego magazynu zejdzie towar
       anchor: field.so-warehouse
-      action: { kind: select, label: "MAG-GL" }
+      action:
+        kind: ask
+        inputType: select
+        label: Z którego magazynu zejdzie towar?
+        hint: Przy realizacji z tego magazynu powstanie dokument WZ.
       requires: [zs.nowe]
       provides: [zs.magazyn]
     - text: Ustaw oczekiwaną datę realizacji
       anchor: field.so-expected-date
-      action: { kind: fill, value: "2026-08-20" }
+      action:
+        kind: ask
+        inputType: date
+        label: Na kiedy klient oczekuje realizacji?
+        hint: Data orientacyjna, służy do planowania wysyłek.
       requires: [zs.nowe]
       provides: [zs.data-realizacji]
     - text: W sekcji Dodatkowe możesz wpisać uwagi widoczne na potwierdzeniu dla klienta
       anchor: field.so-notes
+      action:
+        kind: ask
+        inputType: text
+        label: Jakie uwagi dla klienta?
+        hint: Widoczne na potwierdzeniu zamówienia. Pole opcjonalne — zostaw puste, jeśli nie masz uwag.
       requires: [zs.nowe]
       provides: [zs.uwagi]
     - text: W stopce karty Pozycje kliknij Dodaj pozycję
@@ -47,13 +64,21 @@
       provides: [zs.pozycja-nowa]
     - text: Wybierz produkt z listy
       anchor: field.so-line-product
-      action: { kind: select, label: "SR-M8-100" }
+      action:
+        kind: ask
+        inputType: select
+        label: Który produkt zamawia klient?
       requires: [zs.pozycja-nowa]
       provides: [zs.pozycja-produkt]
       note: Cena podpowiada się z kartoteki, ale możesz ją nadpisać ceną z negocjacji
     - text: Wpisz zamawianą ilość
       anchor: field.so-line-quantity
-      action: { kind: fill, value: "400" }
+      action:
+        kind: ask
+        inputType: number
+        label: Ile sztuk zamawia klient?
+        hint: Przy realizacji ta ilość musi być dostępna na magazynie, inaczej wyjdzie ERR-7004.
+        suggestions: ["1", "10", "100"]
       requires: [zs.pozycja-produkt]
       provides: [zs.pozycja-ilosc]
     - text: Sprawdź wiersz Razem netto w stopce tabeli pozycji
@@ -90,6 +115,10 @@
       provides: [ekran.zamowienia-sprzedazy]
     - text: Otwórz szkic zamówienia klikając jego numer na liście
       anchor: table.sales-orders
+      action:
+        kind: manual
+        label: Otwórz właściwe zamówienie, klikając jego numer
+        hint: Sprawdź kolumnę Status — operacja, którą chcesz wykonać, jest dostępna tylko w określonym statusie.
       requires: [ekran.zamowienia-sprzedazy, zs.zapisane]
       provides: [zs.otwarte-szkic]
     - text: Sprawdź pozycje i wiersz Razem netto w stopce tabeli
@@ -127,6 +156,10 @@
       provides: [ekran.zamowienia-sprzedazy]
     - text: Otwórz zamówienie w statusie Potwierdzone klikając jego numer na liście
       anchor: table.sales-orders
+      action:
+        kind: manual
+        label: Otwórz właściwe zamówienie, klikając jego numer
+        hint: Sprawdź kolumnę Status — operacja, którą chcesz wykonać, jest dostępna tylko w określonym statusie.
       requires: [ekran.zamowienia-sprzedazy, zs.potwierdzone]
       provides: [zs.otwarte-potwierdzone]
     - text: W stopce karty Pozycje kliknij Zrealizuj (utwórz WZ)
@@ -164,7 +197,11 @@
       provides: [ekran.kontrahenci]
     - text: Wpisz nazwę, kod lub NIP w pole wyszukiwania
       anchor: field.counterparty-search
-      action: { kind: fill, value: "Stalmex" }
+      action:
+        kind: ask
+        inputType: text
+        label: Którego kontrahenta szukasz?
+        hint: Wpisz nazwę, kod albo NIP — wyszukiwarka sprawdza wszystkie trzy.
       requires: [ekran.kontrahenci]
       provides: [kontrahent.wyszukany]
     - text: Sprawdź w tabeli rodzaj i status kontrahenta
@@ -219,6 +256,10 @@
       provides: [ekran.zamowienia-sprzedazy]
     - text: Otwórz zamówienie w statusie Zrealizowane klikając jego numer na liście
       anchor: table.sales-orders
+      action:
+        kind: manual
+        label: Otwórz właściwe zamówienie, klikając jego numer
+        hint: Sprawdź kolumnę Status — operacja, którą chcesz wykonać, jest dostępna tylko w określonym statusie.
       requires: [ekran.zamowienia-sprzedazy, zs.zrealizowane]
       provides: [zs.otwarte-zrealizowane]
     - text: W stopce karty Pozycje kliknij Pokaż dokument WZ
@@ -254,30 +295,51 @@
       provides: [kontrahent.formularz]
     - text: Wpisz kod kontrahenta
       anchor: field.counterparty-code
-      action: { kind: fill, value: "DOS-003" }
+      action:
+        kind: ask
+        inputType: text
+        label: Jaki kod ma mieć kontrahent?
+        hint: "Unikalny w kartotece. Przyjęty schemat: DOS- dla dostawców, ODB- dla odbiorców, KON- dla obu."
+        suggestions: [DOS-003, ODB-003, KON-002]
       requires: [kontrahent.formularz]
       provides: [kontrahent.kod]
       note: Kod musi być unikalny w kartotece
     - text: Wpisz pełną nazwę kontrahenta
       anchor: field.counterparty-name
-      action: { kind: fill, value: "Hurtownia Stalowa Sp. z o.o." }
+      action:
+        kind: ask
+        inputType: text
+        label: Jak nazywa się kontrahent?
+        hint: Pełna nazwa z formą prawną, np. Hurtownia Stalowa Sp. z o.o.
       requires: [kontrahent.formularz]
       provides: [kontrahent.nazwa]
     - text: "Wybierz rodzaj: dostawca, odbiorca albo oba"
       anchor: field.counterparty-kind
-      action: { kind: select, label: "Dostawca" }
+      action:
+        kind: ask
+        inputType: select
+        label: Kim jest ten kontrahent?
+        hint: Dostawca pojawi się na PZ i zamówieniach zakupu, odbiorca na WZ i zamówieniach sprzedaży. Wybierz oba, jeśli i kupujesz, i sprzedajesz.
       requires: [kontrahent.formularz]
       provides: [kontrahent.rodzaj]
       note: Dostawcy pojawiają się na PZ i zamówieniach zakupu, odbiorcy na WZ i zamówieniach sprzedaży
     - text: Wpisz NIP
       anchor: field.counterparty-taxid
-      action: { kind: fill, value: "6431234567" }
+      action:
+        kind: ask
+        inputType: text
+        label: Jaki jest NIP?
+        hint: Dokładnie dziesięć cyfr, bez myślników i prefiksu PL.
       requires: [kontrahent.formularz]
       provides: [kontrahent.nip]
       note: Dokładnie dziesięć cyfr, bez myślników
     - text: Wpisz miejscowość
       anchor: field.counterparty-city
-      action: { kind: fill, value: "Katowice" }
+      action:
+        kind: ask
+        inputType: text
+        label: W jakiej miejscowości?
+        hint: Sama nazwa miasta, bez ulicy i kodu pocztowego.
       requires: [kontrahent.formularz]
       provides: [kontrahent.miasto]
     - text: W stopce formularza kliknij Zapisz kontrahenta
@@ -309,7 +371,11 @@
       provides: [ekran.kontrahenci]
     - text: Znajdź kontrahenta wpisując nazwę, kod lub NIP
       anchor: field.counterparty-search
-      action: { kind: fill, value: "Stalmex" }
+      action:
+        kind: ask
+        inputType: text
+        label: Którego kontrahenta szukasz?
+        hint: Wpisz nazwę, kod albo NIP — wyszukiwarka sprawdza wszystkie trzy.
       requires: [ekran.kontrahenci]
       provides: [kontrahent.wyszukany]
     - text: Kliknij Dezaktywuj w wierszu kontrahenta

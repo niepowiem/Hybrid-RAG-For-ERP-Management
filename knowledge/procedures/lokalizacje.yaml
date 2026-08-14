@@ -22,24 +22,41 @@
       provides: [lok.nowa]
     - text: W polu Magazyn wybierz magazyn, w którym powstaje lokalizacja
       anchor: field.location-warehouse
-      action: { kind: select, label: "MAG-GL" }
+      action:
+        kind: ask
+        inputType: select
+        label: W którym magazynie powstaje lokalizacja?
       requires: [lok.nowa]
       provides: [lok.magazyn]
     - text: Wpisz kod lokalizacji w układzie regał-poziom
       anchor: field.location-code
-      action: { kind: fill, value: "F-01" }
+      action:
+        kind: ask
+        inputType: text
+        label: Jaki kod ma mieć lokalizacja?
+        hint: Układ regał-poziom, np. F-01. Musi być unikalny w obrębie magazynu — duplikat zwróci ERR-6001.
+        suggestions: [A-01, B-04, F-01]
       requires: [lok.nowa]
       provides: [lok.kod]
       note: Podpowiedź pod polem przypomina, że kod musi być unikalny w obrębie magazynu
     - text: Podaj orientacyjną pojemność w sztukach
       anchor: field.location-capacity
-      action: { kind: fill, value: "400" }
+      action:
+        kind: ask
+        inputType: number
+        label: Jaka jest orientacyjna pojemność?
+        hint: W sztukach. Zero oznacza pojemność nieokreśloną.
+        suggestions: ["0", "400", "5000"]
       requires: [lok.nowa]
       provides: [lok.pojemnosc]
       note: Zero oznacza pojemność nieokreśloną
     - text: W drugim wierszu formularza uzupełnij opis, żeby było wiadomo, co tam leży
       anchor: field.location-description
-      action: { kind: fill, value: "Regał F — narzędzia" }
+      action:
+        kind: ask
+        inputType: text
+        label: Co będzie składowane w tej lokalizacji?
+        hint: Opis pomaga odszukać regał — wyszukiwarka przeszukuje kod i opis jednocześnie.
       requires: [lok.nowa]
       provides: [lok.opis]
     - text: W stopce formularza kliknij Zapisz lokalizację
@@ -70,7 +87,11 @@
       provides: [ekran.lokalizacje]
     - text: Znajdź lokalizację wpisując jej kod w pole wyszukiwania
       anchor: field.location-search
-      action: { kind: fill, value: "E-09" }
+      action:
+        kind: ask
+        inputType: text
+        label: Której lokalizacji szukasz?
+        hint: Wpisz kod (np. A-01) albo fragment opisu.
       requires: [ekran.lokalizacje]
       provides: [lok.wyszukana]
     - text: Kliknij Dezaktywuj w wierszu lokalizacji
@@ -100,12 +121,20 @@
       provides: [ekran.lokalizacje]
     - text: W filtrze Magazyn wybierz interesujący Cię magazyn
       anchor: field.location-filter-warehouse
-      action: { kind: select, label: "MAG-GL" }
+      action:
+        kind: ask
+        inputType: select
+        label: Który magazyn Cię interesuje?
+        hint: Zostaw Wszystkie, jeśli nie chcesz zawężać listy.
       requires: [ekran.lokalizacje]
       provides: [lok.filtr-magazyn]
     - text: Wpisz kod lub fragment opisu w pole wyszukiwania
       anchor: field.location-search
-      action: { kind: fill, value: "A-01" }
+      action:
+        kind: ask
+        inputType: text
+        label: Której lokalizacji szukasz?
+        hint: Wpisz kod (np. A-01) albo fragment opisu.
       requires: [ekran.lokalizacje]
       provides: [lok.wyszukana]
       note: Wyszukiwanie działa po kodzie i po opisie jednocześnie
@@ -129,7 +158,11 @@
       provides: [ekran.lokalizacje]
     - text: Znajdź nieaktywną lokalizację wpisując jej kod w pole wyszukiwania
       anchor: field.location-search
-      action: { kind: fill, value: "E-09" }
+      action:
+        kind: ask
+        inputType: text
+        label: Której lokalizacji szukasz?
+        hint: Wpisz kod (np. A-01) albo fragment opisu.
       requires: [ekran.lokalizacje]
       provides: [lok.nieaktywna-znaleziona]
     - text: Kliknij Aktywuj w wierszu lokalizacji

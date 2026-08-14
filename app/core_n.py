@@ -12,7 +12,7 @@ from typing import Any, Iterable, Callable, Iterable, Iterator
 from abc import ABC, abstractmethod
 
 from dotenv import load_dotenv
-from langchain.tools import BaseTool
+from langchain_core.tools import BaseTool
 
 REASONING_PREFIXES = ("o1", "o3", "o4", "gpt-5")
 
@@ -46,6 +46,9 @@ AGENT_MODEL = _require_env(name="LLM_MODEL")
 GRAPH_BUILDER_MODEL = _require_env(name="GRAPH_BUILDER_MODEL")
 EMBEDDING_MODEL = _require_env(name="EMBEDDING_MODEL")
 EMBEDDING_DIM = int(_require_env(name="EMBEDDING_DIM"))
+
+GRAPH_DB_PASSWORD = _require_env(name="GRAPH_DB_PASSWORD")
+GRAPH_DB_URL = _require_env(name="GRAPH_DB_URL")
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -81,6 +84,24 @@ class ToolCall:
 
         except json.JSONDecodeError as e:
             return None, str(e)
+
+class RateLimitError(RuntimeError):
+    """
+    Limit tokenów zgłoszony W ŚRODKU strumienia: HTTP 200, a dopiero potem
+    zdarzenie 'error' w SSE.
+
+    Osobny typ, bo to JEDYNY błąd strumienia, który warto ponowić. Pozostałe
+    ('response.failed', ucięty strumień) oznaczają problem z samym żądaniem
+    i ponowienie dałoby dokładnie ten sam wynik.
+
+    :param retry_after: ile sekund czekać, wg nagłówków zdarzenia. None oznacza
+        "serwer nie powiedział" -- wołający użyje wtedy zwykłego backoffu.
+    """
+
+    def __init__(self, message: str, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
 
 class _LLMProviderAPI(ABC):
     __slots__ = ("model", "system", "memory", "history", "how_to_use_tools", "tools", "client", "client_owner")
@@ -251,6 +272,59 @@ class _LLMProviderAPI(ABC):
         # Jeżeli wszystko zawiedzie
         return min(2 ** attempt, 30.0)
 
+    @staticmethod
+    def _retry_after_from(headers: dict[str, Any] | None, message: str) -> float | None:
+        """
+        Ile czekać po limicie zgłoszonym W STRUMIENIU.
+
+        Odpowiednik '_retry_delay', ale dla zdarzenia 'error' z SSE: tam nie ma
+        obiektu Response, tylko surowy słownik nagłówków przekazany przez API.
+        Kolejność źródeł od najdokładniejszego: 'retry-after-ms' (milisekundy,
+        np. 2819), 'retry-after' (całe sekundy), na końcu treść komunikatu.
+
+        :param headers: nagłówki ze zdarzenia 'error'
+        :param message: komunikat błędu ("Please try again in 2.819s")
+        :return: sekundy albo None, gdy nic nie da się odczytać
+        """
+
+        headers = headers or {}
+
+        if ms := headers.get("retry-after-ms"):
+            try:
+                return float(ms) / 1000.0
+
+            except (TypeError, ValueError):
+                pass
+
+        if seconds := headers.get("retry-after"):
+            try:
+                return float(seconds)
+
+            except (TypeError, ValueError):
+                pass
+
+        if match := re.search(r"try again in ([\d.]+)s", message or ""):
+            return float(match.group(1))
+
+        return None
+
+    @classmethod
+    def _rate_limit_from_chunk(cls, error: dict[str, Any]) -> RateLimitError | None:
+        """
+        Zamienia zdarzenie 'error' z SSE na RateLimitError -- albo None, jeśli
+        to inny błąd niż limit tokenów.
+
+        Wydzielone, bo obie rodziny providerów (Chat Completions i Responses)
+        dostają ten sam kształt błędu, ale w innym miejscu strumienia.
+        """
+
+        if error.get("code") != "rate_limit_exceeded":
+            return None
+
+        message = error.get("message", "przekroczono limit tokenów")
+
+        return RateLimitError(message, retry_after=cls._retry_after_from(error.get("headers"), message))
+
     def _stream_lines(self, url: str, payload: dict[str, Any]) -> Iterator[str]:
         """
         POST + strumień linii, z ponowieniami przy 429 i błędach transportu.
@@ -389,6 +463,62 @@ class _LLMProviderAPI(ABC):
 
         return results
 
+    def _stream_turn_retrying(self, think: bool,
+                              options: GenerationOptions) -> Iterator[dict[str, Any]]:
+        """
+        '_stream_turn' z ponowieniem przy limicie tokenów zgłoszonym w strumieniu.
+
+        '_stream_lines' ponawia przy HTTP 429, ale API potrafi odpowiedzieć 200
+        i dopiero potem wysłać zdarzenie 'error' -- tamta pętla tego nie widzi.
+
+        Ponawiamy TYLKO dopóki nic nie zostało wyemitowane, po tej samej zasadzie
+        co w '_stream_lines': restart w połowie odpowiedzi pokazałby użytkownikowi
+        jej początek dwa razy.
+
+        Historia jest przy tym bezpieczna -- '_stream_turn' dopisuje do niej
+        dopiero po otrzymaniu pełnej odpowiedzi, więc przerwana próba nie zostawia
+        po sobie niczego.
+
+        :return: wywołania narzędzi zwrócone przez '_stream_turn'
+        """
+
+        for attempt in range(self.MAX_RETRIES):
+            emitted = False
+            turn = self._stream_turn(think=think, options=options)
+
+            try:
+                while True:
+                    try:
+                        event = next(turn)
+
+                    except StopIteration as stop:
+                        # Generator skończył się normalnie; jego 'return' niesie
+                        # listę ToolCall, którą musimy przekazać wyżej.
+                        return stop.value
+
+                    emitted = True
+                    yield event
+
+            except RateLimitError as e:
+                turn.close()
+
+                if emitted or attempt == self.MAX_RETRIES - 1:
+                    raise
+
+                delay = e.retry_after if e.retry_after is not None else min(2 ** attempt, 30.0)
+                delay += 0.5   # margines: nagłówek podaje moment odblokowania co do milisekundy
+
+                # Komunikat idzie kanałem 'content', żeby 'pretty' go pokazało --
+                # inaczej wygląda to jak zawieszenie procesu.
+                yield {"type": "content",
+                       "text": f"\n[limit tokenów, czekam {delay:.1f}s "
+                               f"(próba {attempt + 1}/{self.MAX_RETRIES})]\n"}
+
+                time.sleep(delay)
+
+        raise RuntimeError(f"Przekroczono limit {self.MAX_RETRIES} prób "
+                           f"po wielokrotnych limitach tokenów")
+
     def call(self, message: str,
              think: bool = False,
              max_tool_iterations: int = 8,
@@ -397,7 +527,7 @@ class _LLMProviderAPI(ABC):
         options: GenerationOptions = generation_options or self.DEFAULT_OPTIONS
 
         for _ in range(max_tool_iterations):
-            calls: list[ToolCall] = yield from self._stream_turn(think=think, options=options)
+            calls: list[ToolCall] = yield from self._stream_turn_retrying(think=think, options=options)
 
             if not calls:
                 self._end_turn()
@@ -523,6 +653,15 @@ class _LLMOpenAIAPINonReasoning(_LLMProviderAPI):
         #   "usage": null
         # }
         for chunk in chunks:
+            # Błąd przychodzi BEZ pola 'choices', więc bez tej gałęzi zostałby
+            # po cichu pominięty przez 'continue' niżej. Skutek: tura kończy się
+            # pusta, a pętla narzędzi leci dalej z niekompletną historią.
+            if error := chunk.get("error"):
+                if limit := self._rate_limit_from_chunk(error):
+                    raise limit
+
+                raise RuntimeError(f"API zwróciło błąd strumienia: {error}")
+
             if chunk.get("usage"):
                 usage = chunk["usage"]
 
@@ -681,6 +820,11 @@ class _LLMOPENAIAPIReasoning(_LLMOpenAIAPINonReasoning):
                     final = chunk.get("response")
 
                 case "error":
+                    # Limit tokenów wyodrębniamy z reszty błędów: tylko on ma sens
+                    # ponawiać, i tylko on niesie informację, ile czekać.
+                    if limit := self._rate_limit_from_chunk(chunk.get("error") or {}):
+                        raise limit
+
                     raise RuntimeError(f"Responses API zwróciło błąd strumienia: {chunk}")
 
         if final is None:
@@ -768,6 +912,18 @@ class _LLMOllamaAPI(_LLMProviderAPI):
         #   "done": false
         # }
         for chunk in chunks:
+            # Ollama i proxy przed nią (Open WebUI) zgłaszają problem polem
+            # 'error' zamiast statusem HTTP. Bez tej gałęzi chunk przeleciałby
+            # bez śladu, a tura skończyłaby się bez 'done' -- czyli komunikatem
+            # o uciętym strumieniu zamiast prawdziwej przyczyny.
+            if error := chunk.get("error"):
+                detail = error if isinstance(error, dict) else {"message": str(error)}
+
+                if limit := self._rate_limit_from_chunk(detail):
+                    raise limit
+
+                raise RuntimeError(f"Ollama zwróciła błąd strumienia: {error}")
+
             message = chunk.get("message") or {}
 
             if message.get("thinking"):

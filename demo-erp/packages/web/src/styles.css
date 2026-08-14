@@ -606,3 +606,216 @@ body.assistant-driving .content { pointer-events: none; }
 
 /* Metryka postępu w nagłówku arkusza inwentaryzacji. */
 .progress-note { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); }
+
+/* ==================== ASYSTENT: NARRACJA, PYTANIA, WYJAŚNIENIA ===========
+   Dopisane dla trybu "Zrób za mnie": wyjaśnianie kroków, przerwania na wartość
+   od użytkownika i znacznik kroku, przy którym autopilot się zatrzyma.
+   Klasy .msg .steps li.aktywny, .msg-actions i .assistant-driving-bar
+   są już wyżej — tu tylko to, czego jeszcze nie było. */
+
+/* Co autopilot właśnie robi i po co. Widoczne też w trybie "Pokaż mi to". */
+.assistant-narration {
+  align-self: stretch;
+  padding: 8px 11px;
+  background: var(--accent-wash);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 4px 4px 0;
+  font-size: 12px; line-height: 1.5; color: var(--ink);
+}
+
+/* Wyjaśnienie "po co ten krok" — pod tekstem kroku, jak .note. */
+.msg .steps .why {
+  display: block; margin-top: 2px;
+  font-size: 11.5px; line-height: 1.45; color: var(--ink-soft);
+}
+.msg .steps .why::before { content: "po co: "; color: var(--ink-faint); }
+
+/* Znacznik kroku, przy którym autopilot zapyta o wartość. */
+.msg .steps .ask-tag {
+  display: inline-block; margin-top: 3px; padding: 0 6px;
+  background: var(--accent-wash); border: 1px solid var(--accent-dim);
+  border-radius: 3px; font-size: 10px; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--ink-soft);
+}
+
+/* Przerwanie na wartość od użytkownika (akcja `ask`). */
+.assistant-ask {
+  align-self: stretch; padding: 11px 12px;
+  background: var(--card); border: 1px solid var(--accent-dim);
+  border-radius: 5px;
+}
+.assistant-ask .ask-label { font-weight: 600; font-size: 12.5px; margin-bottom: 3px; }
+.assistant-ask .ask-hint {
+  font-size: 11.5px; line-height: 1.45; color: var(--ink-soft); margin-bottom: 8px;
+}
+.assistant-ask .ask-warn { margin-top: 6px; font-size: 11.5px; color: var(--danger); }
+.assistant-ask input,
+.assistant-ask select {
+  width: 100%; padding: 6px 8px; font-size: 12.5px; font-family: inherit;
+  border: 1px solid var(--line); border-radius: 3px;
+  background: #fff; color: var(--ink);
+}
+.assistant-ask .ask-actions { display: flex; gap: 6px; margin-top: 9px; }
+
+/* ==================== ASYSTENT: NARRACJA, PYTANIA, WYJAŚNIENIA ===========
+   Dopisane dla trybu "Zrób za mnie": wyjaśnianie kroków, przerwania na wartość
+   od użytkownika i znacznik kroku, przy którym autopilot się zatrzyma.
+   Klasy .msg .steps li.aktywny, .msg-actions i .assistant-driving-bar
+   są już wyżej — tu tylko to, czego jeszcze nie było. */
+
+/* Co autopilot właśnie robi i po co. Widoczne też w trybie "Pokaż mi to". */
+.assistant-narration {
+  align-self: stretch;
+  padding: 8px 11px;
+  background: var(--accent-wash);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 4px 4px 0;
+  font-size: 12px; line-height: 1.5; color: var(--ink);
+}
+
+/* Wyjaśnienie "po co ten krok" — pod tekstem kroku, jak .note. */
+.msg .steps .why {
+  display: block; margin-top: 2px;
+  font-size: 11.5px; line-height: 1.45; color: var(--ink-soft);
+}
+.msg .steps .why::before { content: "po co: "; color: var(--ink-faint); }
+
+/* Znacznik kroku, przy którym autopilot zapyta o wartość. */
+.msg .steps .ask-tag {
+  display: inline-block; margin-top: 3px; padding: 0 6px;
+  background: var(--accent-wash); border: 1px solid var(--accent-dim);
+  border-radius: 3px; font-size: 10px; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--ink-soft);
+}
+
+/* Przerwanie na wartość od użytkownika (akcja `ask`). */
+.assistant-ask {
+  align-self: stretch; padding: 11px 12px;
+  background: var(--card); border: 1px solid var(--accent-dim);
+  border-radius: 5px;
+}
+.assistant-ask .ask-label { font-weight: 600; font-size: 12.5px; margin-bottom: 3px; }
+.assistant-ask .ask-hint {
+  font-size: 11.5px; line-height: 1.45; color: var(--ink-soft); margin-bottom: 8px;
+}
+.assistant-ask .ask-warn { margin-top: 6px; font-size: 11.5px; color: var(--danger); }
+.assistant-ask input,
+.assistant-ask select {
+  width: 100%; padding: 6px 8px; font-size: 12.5px; font-family: inherit;
+  border: 1px solid var(--line); border-radius: 3px;
+  background: #fff; color: var(--ink);
+}
+.assistant-ask .ask-actions { display: flex; gap: 6px; margin-top: 9px; }
+
+/* ==================== ASYSTENT: NARRACJA, PYTANIA, WYJAŚNIENIA ===========
+   Dopisane dla trybu "Zrób za mnie": wyjaśnianie kroków, przerwania na wartość
+   od użytkownika i znacznik kroku, przy którym autopilot się zatrzyma.
+   Klasy .msg .steps li.aktywny, .msg-actions i .assistant-driving-bar
+   są już wyżej — tu tylko to, czego jeszcze nie było. */
+
+/* Co autopilot właśnie robi i po co. Widoczne też w trybie "Pokaż mi to". */
+.assistant-narration {
+  align-self: stretch;
+  padding: 8px 11px;
+  background: var(--accent-wash);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 4px 4px 0;
+  font-size: 12px; line-height: 1.5; color: var(--ink);
+}
+
+/* Wyjaśnienie "po co ten krok" — pod tekstem kroku, jak .note. */
+.msg .steps .why {
+  display: block; margin-top: 2px;
+  font-size: 11.5px; line-height: 1.45; color: var(--ink-soft);
+}
+.msg .steps .why::before { content: "po co: "; color: var(--ink-faint); }
+
+/* Znacznik kroku, przy którym autopilot zapyta o wartość. */
+.msg .steps .ask-tag {
+  display: inline-block; margin-top: 3px; padding: 0 6px;
+  background: var(--accent-wash); border: 1px solid var(--accent-dim);
+  border-radius: 3px; font-size: 10px; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--ink-soft);
+}
+
+/* Przerwanie na wartość od użytkownika (akcja `ask`). */
+.assistant-ask {
+  align-self: stretch; padding: 11px 12px;
+  background: var(--card); border: 1px solid var(--accent-dim);
+  border-radius: 5px;
+}
+.assistant-ask .ask-label { font-weight: 600; font-size: 12.5px; margin-bottom: 3px; }
+.assistant-ask .ask-hint {
+  font-size: 11.5px; line-height: 1.45; color: var(--ink-soft); margin-bottom: 8px;
+}
+.assistant-ask .ask-warn { margin-top: 6px; font-size: 11.5px; color: var(--danger); }
+.assistant-ask input,
+.assistant-ask select {
+  width: 100%; padding: 6px 8px; font-size: 12.5px; font-family: inherit;
+  border: 1px solid var(--line); border-radius: 3px;
+  background: #fff; color: var(--ink);
+}
+.assistant-ask .ask-actions { display: flex; gap: 6px; margin-top: 9px; }
+
+/* ===================== DYMEK PRZY PODŚWIETLANYM ELEMENCIE ================
+   Wyjaśnienie i interakcja TAM, gdzie dzieje się akcja. Tekst w panelu
+   asystenta w rogu ekranu był przeoczany — użytkownik patrzy na kursor. */
+
+.assistant-tip {
+  position: fixed; z-index: 85;
+  max-width: 340px; padding: 10px 12px;
+  background: var(--panel); color: var(--panel-ink);
+  border: 1px solid var(--panel-line); border-radius: 5px;
+  box-shadow: 0 8px 22px rgba(20, 22, 24, 0.28);
+  font-size: 12.5px; line-height: 1.45;
+  /* Pasywny dymek nie łapie kliknięć — inaczej zasłaniałby element,
+     który właśnie tłumaczy. Wersja interaktywna nadpisuje to niżej. */
+  pointer-events: none;
+  transition: opacity 180ms ease, top 200ms cubic-bezier(0.33, 0, 0.2, 1),
+  left 200ms cubic-bezier(0.33, 0, 0.2, 1);
+}
+
+.assistant-tip.interaktywny {
+  pointer-events: auto;
+  min-width: 260px;
+  border-color: var(--accent);
+}
+
+.assistant-tip .tip-main { font-weight: 600; }
+
+.assistant-tip .tip-hint {
+  margin-top: 4px; font-size: 11.5px; font-weight: 400;
+  line-height: 1.45; opacity: 0.85;
+}
+
+.assistant-tip .tip-warn { margin-top: 6px; font-size: 11.5px; color: #f0b429; }
+
+.assistant-tip input,
+.assistant-tip select {
+  width: 100%; margin-top: 9px; padding: 6px 8px;
+  font-size: 12.5px; font-family: inherit;
+  border: 1px solid var(--panel-line); border-radius: 3px;
+  background: #fff; color: var(--ink);
+}
+
+/* Propozycje wartości: kliknięcie od razu zatwierdza, bez dodatkowego kroku. */
+.assistant-tip .tip-suggestions {
+  display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px;
+}
+
+.assistant-tip .tip-suggestions .chip-btn {
+  padding: 3px 9px; font-size: 11.5px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--panel-line); border-radius: 11px;
+  color: var(--panel-ink); cursor: pointer;
+}
+
+.assistant-tip .tip-suggestions .chip-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.assistant-tip .tip-actions { display: flex; gap: 6px; margin-top: 10px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .assistant-tip { transition: opacity 180ms ease; }
+}

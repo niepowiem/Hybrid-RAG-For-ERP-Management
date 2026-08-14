@@ -13,33 +13,33 @@
  */
 
 export type ErrorCode =
-  | "ERR-1001"
-  | "ERR-1002"
-  | "ERR-1003"
-  | "ERR-1004"
-  | "ERR-1005"
-  | "ERR-1006"
-  | "ERR-2001"
-  | "ERR-3001"
-  | "ERR-4001"
-  | "ERR-4002"
-  | "ERR-4003"
-  | "ERR-4004"
-  | "ERR-5001"
-  | "ERR-5002"
-  | "ERR-5003"
-  | "ERR-6001"
-  | "ERR-6002"
-  | "ERR-5201"
-  | "ERR-5202"
-  | "ERR-7001"
-  | "ERR-7002"
-  | "ERR-7003"
-  | "ERR-7004"
-  | "ERR-8001"
-  | "ERR-8002"
-  | "ERR-8101"
-  | "ERR-8102";
+    | "ERR-1001"
+    | "ERR-1002"
+    | "ERR-1003"
+    | "ERR-1004"
+    | "ERR-1005"
+    | "ERR-1006"
+    | "ERR-2001"
+    | "ERR-3001"
+    | "ERR-4001"
+    | "ERR-4002"
+    | "ERR-4003"
+    | "ERR-4004"
+    | "ERR-5001"
+    | "ERR-5002"
+    | "ERR-5003"
+    | "ERR-6001"
+    | "ERR-6002"
+    | "ERR-5201"
+    | "ERR-5202"
+    | "ERR-7001"
+    | "ERR-7002"
+    | "ERR-7003"
+    | "ERR-7004"
+    | "ERR-8001"
+    | "ERR-8002"
+    | "ERR-8101"
+    | "ERR-8102";
 
 export interface ErrorDef {
   code: ErrorCode;
@@ -75,7 +75,7 @@ export const ERRORS: Record<ErrorCode, ErrorDef> = {
     code: "ERR-1002",
     httpStatus: 409,
     messageUser:
-      "Ten dokument jest już zatwierdzony i nie można go edytować.",
+        "Ten dokument jest już zatwierdzony i nie można go edytować.",
     messageDev: "Document is not in draft status",
     causes: [
       "Dokument został zatwierdzony — po zatwierdzeniu dokument jest zamknięty",
@@ -103,7 +103,7 @@ export const ERRORS: Record<ErrorCode, ErrorDef> = {
     code: "ERR-1004",
     httpStatus: 422,
     messageUser:
-      "Na magazynie źródłowym nie ma wystarczającej ilości produktu, aby zatwierdzić ten dokument.",
+        "Na magazynie źródłowym nie ma wystarczającej ilości produktu, aby zatwierdzić ten dokument.",
     messageDev: "Insufficient stock on source warehouse",
     causes: [
       "Ilość na dokumencie przekracza aktualny stan magazynowy produktu",
@@ -120,7 +120,7 @@ export const ERRORS: Record<ErrorCode, ErrorDef> = {
     code: "ERR-1005",
     httpStatus: 422,
     messageUser:
-      "Przesunięcie MM musi mieć różne magazyny: źródłowy i docelowy.",
+        "Przesunięcie MM musi mieć różne magazyny: źródłowy i docelowy.",
     messageDev: "MM requires distinct source and target warehouses",
     causes: ["Wybrano ten sam magazyn w polu źródłowym i docelowym"],
     resolution: ["Zmień jeden z magazynów tak, aby były różne"],
@@ -131,7 +131,7 @@ export const ERRORS: Record<ErrorCode, ErrorDef> = {
     code: "ERR-1006",
     httpStatus: 422,
     messageUser:
-      "Produkt na pozycji jest nieaktywny lub nie istnieje w kartotece.",
+        "Produkt na pozycji jest nieaktywny lub nie istnieje w kartotece.",
     messageDev: "Line references unknown or inactive product",
     causes: [
       "Produkt został dezaktywowany po dodaniu go do dokumentu",
@@ -156,7 +156,7 @@ export const ERRORS: Record<ErrorCode, ErrorDef> = {
     code: "ERR-3001",
     httpStatus: 403,
     messageUser:
-      "Tylko kierownik może zatwierdzać przesunięcia międzymagazynowe (MM).",
+        "Tylko kierownik może zatwierdzać przesunięcia międzymagazynowe (MM).",
     messageDev: "Role not permitted to confirm MM documents",
     causes: [
       "Zalogowana rola to magazynier, a zatwierdzanie MM wymaga roli kierownik",
@@ -173,7 +173,7 @@ export const ERRORS: Record<ErrorCode, ErrorDef> = {
     code: "ERR-4001",
     httpStatus: 409,
     messageUser:
-      "Dla tego magazynu istnieje już otwarta inwentaryzacja. Zamknij ją, zanim rozpoczniesz nową.",
+        "Dla tego magazynu istnieje już otwarta inwentaryzacja. Zamknij ją, zanim rozpoczniesz nową.",
     messageDev: "Open stocktake already exists for warehouse",
     causes: [
       "Poprzednia inwentaryzacja tego magazynu nie została zamknięta",
@@ -190,7 +190,7 @@ export const ERRORS: Record<ErrorCode, ErrorDef> = {
     code: "ERR-4002",
     httpStatus: 422,
     messageUser:
-      "Nie można zamknąć inwentaryzacji — nie wszystkie pozycje zostały policzone.",
+        "Nie można zamknąć inwentaryzacji — nie wszystkie pozycje zostały policzone.",
     messageDev: "Stocktake has uncounted lines",
     causes: [
       "Co najmniej jedna pozycja arkusza ma puste pole Policzono",
@@ -220,7 +220,7 @@ export const ERRORS: Record<ErrorCode, ErrorDef> = {
     code: "ERR-4004",
     httpStatus: 409,
     messageUser:
-      "Inwentaryzacja jest zamknięta — nie można już zmieniać liczeń.",
+        "Inwentaryzacja jest zamknięta — nie można już zmieniać liczeń.",
     messageDev: "Stocktake is closed",
     causes: ["Arkusz został zamknięty przez kierownika"],
     resolution: [
@@ -246,7 +246,7 @@ export const ERRORS: Record<ErrorCode, ErrorDef> = {
     code: "ERR-5002",
     httpStatus: 422,
     messageUser:
-      "Dostawca jest nieaktywny — nie można wysłać do niego zamówienia.",
+        "Dostawca jest nieaktywny — nie można wysłać do niego zamówienia.",
     messageDev: "Supplier is inactive",
     causes: [
       "Kontrahent został dezaktywowany w kartotece po utworzeniu zamówienia",
@@ -260,7 +260,7 @@ export const ERRORS: Record<ErrorCode, ErrorDef> = {
     code: "ERR-5003",
     httpStatus: 409,
     messageUser:
-      "Ta operacja nie jest dostępna w bieżącym statusie zamówienia.",
+        "Ta operacja nie jest dostępna w bieżącym statusie zamówienia.",
     messageDev: "Operation not allowed in current purchase order status",
     causes: [
       "Wysłać można tylko zamówienie w statusie Szkic",
@@ -278,7 +278,7 @@ export const ERRORS: Record<ErrorCode, ErrorDef> = {
     code: "ERR-6001",
     httpStatus: 409,
     messageUser:
-      "Lokalizacja o tym kodzie już istnieje w wybranym magazynie.",
+        "Lokalizacja o tym kodzie już istnieje w wybranym magazynie.",
     messageDev: "Location code already exists in warehouse",
     causes: [
       "Kod lokalizacji musi być unikalny w obrębie magazynu, a podany kod jest już zajęty",
@@ -293,7 +293,7 @@ export const ERRORS: Record<ErrorCode, ErrorDef> = {
     code: "ERR-6002",
     httpStatus: 409,
     messageUser:
-      "Nie można dezaktywować lokalizacji, która występuje na pozycjach dokumentów.",
+        "Nie można dezaktywować lokalizacji, która występuje na pozycjach dokumentów.",
     messageDev: "Location is referenced by document lines",
     causes: [
       "Pozycje istniejących dokumentów wskazują tę lokalizację jako miejsce składowania",
@@ -308,7 +308,7 @@ export const ERRORS: Record<ErrorCode, ErrorDef> = {
     code: "ERR-5201",
     httpStatus: 409,
     messageUser:
-      "Numer faktury od tego dostawcy już istnieje w systemie.",
+        "Numer faktury od tego dostawcy już istnieje w systemie.",
     messageDev: "Duplicate supplier invoice number",
     causes: [
       "Faktura o tym numerze zewnętrznym została już zarejestrowana dla tego dostawcy",
@@ -324,7 +324,7 @@ export const ERRORS: Record<ErrorCode, ErrorDef> = {
     code: "ERR-5202",
     httpStatus: 409,
     messageUser:
-      "Faktura jest już zaksięgowana i nie można jej edytować.",
+        "Faktura jest już zaksięgowana i nie można jej edytować.",
     messageDev: "Purchase invoice is already booked",
     causes: ["Faktura została zaksięgowana — po zaksięgowaniu jest zamknięta"],
     resolution: [
@@ -350,7 +350,7 @@ export const ERRORS: Record<ErrorCode, ErrorDef> = {
     code: "ERR-7002",
     httpStatus: 422,
     messageUser:
-      "Odbiorca jest nieaktywny — nie można potwierdzić dla niego zamówienia.",
+        "Odbiorca jest nieaktywny — nie można potwierdzić dla niego zamówienia.",
     messageDev: "Customer is inactive",
     causes: [
       "Kontrahent został dezaktywowany w kartotece po utworzeniu zamówienia",
@@ -364,7 +364,7 @@ export const ERRORS: Record<ErrorCode, ErrorDef> = {
     code: "ERR-7003",
     httpStatus: 409,
     messageUser:
-      "Ta operacja nie jest dostępna w bieżącym statusie zamówienia sprzedaży.",
+        "Ta operacja nie jest dostępna w bieżącym statusie zamówienia sprzedaży.",
     messageDev: "Operation not allowed in current sales order status",
     causes: [
       "Potwierdzić można tylko zamówienie w statusie Szkic",
@@ -380,7 +380,7 @@ export const ERRORS: Record<ErrorCode, ErrorDef> = {
     code: "ERR-7004",
     httpStatus: 422,
     messageUser:
-      "Nie można zrealizować zamówienia — na magazynie brakuje towaru na co najmniej jednej pozycji.",
+        "Nie można zrealizować zamówienia — na magazynie brakuje towaru na co najmniej jednej pozycji.",
     messageDev: "Insufficient stock to fulfil sales order",
     causes: [
       "Zamawiana ilość przekracza aktualny stan magazynowy produktu",
@@ -393,7 +393,10 @@ export const ERRORS: Record<ErrorCode, ErrorDef> = {
     resolutionRefs: ["proc.magazyn.sprawdzenie-stanu", "proc.zakupy.utworzenie-zamowienia"],
     isKnownBug: false,
   },
-  // ------------------------- kartoteki (8xxx) ------------------------------
+
+  // ---------------------------- kartoteki (8xxx) ---------------------------
+  // 80xx to produkty, 81xx to kontrahenci. Oba rodzaje działają tak samo:
+  // duplikat kodu blokuje zapis, a rekord użyty w obrocie blokuje wycofanie.
   "ERR-8001": {
     code: "ERR-8001",
     httpStatus: 409,

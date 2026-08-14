@@ -1495,8 +1495,7 @@ class KnowledgeGraph:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def __make_embeddings(node_in_question: GraphNode, class_in_question: GraphClassSchema,
-                          embed_model: EmbeddingModel) -> bool:
+    def __make_embeddings(node_in_question: GraphNode, class_in_question: GraphClassSchema, embed_model: EmbeddingModel) -> bool:
         """
         Liczy wektor dla jednego węzła z parametrów wskazanych przez jego klasę.
         Wywoływane z '_compute_embeddings', czyli z 'sync()' przed zapisem do Neo4j.
@@ -1569,7 +1568,7 @@ class KnowledgeGraph:
         # embeddings[0] będzie POJEDYNCZĄ LICZBĄ, a błąd wyjdzie dopiero
         # w Neo4j przy zapisie albo -- gorzej -- przy pierwszym wyszukiwaniu.
         # Asercja zamienia to na czytelny błąd w miejscu powstania.
-        if embeddings := embed_model.encode(prepared_text_for_vector_embedding):
+        if embeddings := embed_model.embed(prepared_text_for_vector_embedding).embeddings:
             first = embeddings[0]
 
             if not isinstance(first, (list, tuple)):
@@ -1889,8 +1888,7 @@ class KnowledgeGraph:
 
         return rows
 
-    def sync(self, driver:Driver, database: str = "neo4j", batch_size: int = 500,
-             embed_model: EmbeddingModel | None = None, embed_dimensions: int | None = None) -> dict[str, int]:
+    def sync(self, driver:Driver, database: str = "neo4j", batch_size: int = 500, embed_model: EmbeddingModel | None = None, embed_dimensions: int | None = None) -> dict[str, int]:
         """
         Zapisuje CAŁY graf (węzły + relacje) do Neo4j. Idempotentne — bezpieczne
         do wielokrotnego wywołania na tym samym stanie grafu.

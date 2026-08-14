@@ -19,7 +19,11 @@
       provides: [ekran.inwentaryzacja]
     - text: Wybierz magazyn do policzenia z listy obok przycisku
       anchor: field.stocktake-warehouse
-      action: { kind: select, label: "MAG-GL" }
+      action:
+        kind: ask
+        inputType: select
+        label: Który magazyn liczysz?
+        hint: Dla tego magazynu system zamrozi stan księgowy jako punkt odniesienia.
       requires: [ekran.inwentaryzacja]
       provides: [inw.magazyn-wybrany]
     - text: Kliknij Nowa inwentaryzacja
@@ -51,11 +55,19 @@
       provides: [ekran.inwentaryzacja]
     - text: Otwórz arkusz klikając jego numer na liście inwentaryzacji
       anchor: table.stocktakes
+      action:
+        kind: manual
+        label: Otwórz właściwy arkusz, klikając jego numer
+        hint: Tylko Ty wiesz, którego magazynu dotyczy liczenie. Arkusze do uzupełnienia mają status Otwarta.
       requires: [ekran.inwentaryzacja, inw.arkusz-otwarty]
       provides: [inw.arkusz-wybrany]
       note: Otwarte arkusze mają status Otwarta
     - text: Dla każdej pozycji wpisz ilość policzoną fizycznie w kolumnie Policzono
       anchor: field.count-input
+      action:
+        kind: manual
+        label: Wpisz policzone ilości dla wszystkich pozycji arkusza
+        hint: Przechodź Tabem przez kolejne wiersze — wartość zapisuje się po opuszczeniu pola. Kolumna Różnica przelicza się na bieżąco. Gdy skończysz, kliknij Kontynuuj.
       requires: [inw.arkusz-wybrany]
       provides: [inw.policzone]
       note: Wartość zapisuje się po opuszczeniu pola — możesz przechodzić Tabem przez kolejne wiersze
@@ -88,6 +100,10 @@
       provides: [ekran.inwentaryzacja]
     - text: Otwórz arkusz klikając jego numer na liście inwentaryzacji
       anchor: table.stocktakes
+      action:
+        kind: manual
+        label: Otwórz właściwy arkusz, klikając jego numer
+        hint: Tylko Ty wiesz, którego magazynu dotyczy liczenie. Arkusze do uzupełnienia mają status Otwarta.
       requires: [ekran.inwentaryzacja, inw.arkusz-otwarty]
       provides: [inw.arkusz-wybrany]
       note: Otwarte arkusze mają status Otwarta

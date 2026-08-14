@@ -1,15 +1,15 @@
 import yaml
 import sys
 from pathlib import Path
+from typing import Any
 
 from neo4j import Driver
 from pydantic import ValidationError
 
-from app import graph
-from app.core import EMBED_MODEL, EmbedModel, EMBED_MODEL_DIM, PROJECT_ROOT
-from app.core_n import EmbeddingModel, ChatModel, EmbeddingResponse
-from app.graph import initialize_knowledge_graph, build_graph_with_ollama, print_graph
-from app.schema import Procedure, Error, Concept, KB_DATATYPE
+from app import graph_n
+from app.core_n import EmbeddingModel, EmbeddingResponse, PROJECT_ROOT, EMBEDDING_MODEL
+from app.graph_n import build_graph_with_llm, save_graph, GRAPHS_DIR
+from app.schema_n import Procedure, Error, Concept, KB_DATATYPE
 
 KNOWLEDGE_DIR = PROJECT_ROOT / "knowledge"
 CATEGORY: dict[str, type[KB_DATATYPE]] = {
@@ -104,98 +104,87 @@ def _validate_embeddings(embed: EmbeddingModel, dim:int) -> bool:
 def ingest_procedural(driver: Driver, embed: EmbeddingModel, dim: int, validate: bool=True) -> None:
     raise NotImplementedError("Not implemented Yet!")
 
-def ingest_llm(driver: Driver, chat: ChatModel, embed: EmbeddingModel, dim: int, validate: bool=True) -> None:
+def ingest_steps(documents: list[KB_DATATYPE]) -> dict[str, Any]:
+    """
+    Dobudowuje warstwę proceduralną: węzły Krok i Stan oraz łączące je relacje.
+
+    Uruchamiać PO 'build_graph_with_llm' (builder woła 'clear()' na starcie,
+    więc schemat zarejestrowany wcześniej zostałby zmieciony) i PRZED 'sync()'.
+
+    :param documents: dokumenty z 'load_knowledge' -- nie tylko procedury,
+        funkcja sama odsiewa błędy i pojęcia
+    :return: raport z licznikami; 'missing' niepuste oznacza, że LLM nie
+        trzymał się konwencji nazw węzłów i część procedur nie ma kroków
+    """
+
+    from app.plan_n import (register_system_schema, attach_steps_from_documents,
+                            attach_error_links)
+
+    register_message = register_system_schema(graph_n.knowledge_graph)
+
+    for message in register_message:
+        if not message.startswith(("OK", "INFO")):
+            print(f"UWAGA przy rejestracji schematu: {message}", file=sys.stderr)
+
+    report = attach_steps_from_documents(graph_n.knowledge_graph, documents)
+
+    print(f"kroki={report['steps']} współdzielone={report['reused']} "
+          f"krawędzie={report['edges']} stany={report['states']} "
+          f"procedury={report['procedures']}")
+
+    if report["missing"]:
+        print(f"UWAGA: {len(report['missing'])} procedur nie ma węzła o oczekiwanej "
+              f"nazwie -- ich kroki NIE zostały dodane. Popraw konwencję nazw "
+              f"w prompcie systemowym i powtórz ingest.", file=sys.stderr)
+
+    # Powiązania błąd -> procedura naprawcza. Tworzone z 'solutions[].ref',
+    # deterministycznie: to po nich autopilot szuka naprawy po napotkaniu błędu.
+    links = attach_error_links(graph_n.knowledge_graph, documents)
+    print(f"powiązania naprawcze: {links['links']} dla {links['errors']} błędów")
+
+    report |= {f"error_{k}": v for k, v in links.items()}
+
+    return report
+
+def ingest_llm(driver: Driver, model:str, embed: EmbeddingModel, dim: int, validate: bool=True, provider: str | None = None) -> None:
     if validate:
+        print(f"Ingest LLM: VALIDATING")
         _validate_embeddings(embed, dim=dim)
 
+    print(f"Ingest LLM: LOADING KNOWLEDGE")
     documents: list[KB_DATATYPE] = load_knowledge()
     check_for_duplicates(documents)
 
     # Sklej reprezentacje tekstowe wszystkich dokumentów
-    document_string: str = "\n\n".join(
-        [document.__repr__() for document in documents]
-    )
+    print(f"Ingest LLM: STRINGING KNOWLEDGE")
+    document_string: str = "\n\n".join([document.__repr__() for document in documents])
 
-    # TODO
-    # build_graph_with_ollama(model=model, documents=document_string)
+    # Budujemy pre-ingest
+    print(f"Ingest LLM: BUILDING")
+    build_graph_with_llm(model, provider=provider, documents=document_string)
 
-    # TODO
+    # Ingestujemy kroki (warstwa deterministyczna, bez udziału modelu)
+    print(f"Ingest LLM: STEPS")
+    ingest_steps(documents)
 
-# TODO: Trzeba najpierw zrobić graph_n.py
-# def ingest_llm(driver: Driver, model: str, validate:bool=True) -> None:
-#     """
-#     Pełny potok przetwarzania wiedzy:
-#     1. Inicjalizuje pusty graf.
-#     2. Testuje model embeddingów (pre-flight check).
-#     3. Ładuje dokumenty z plików YAML.
-#     4. Buduje graf wiedzy przy użyciu LLM (Ollama).
-#     5. Rejestruje schemat systemowy i dołącza kroki.
-#     6. Zapisuje graf lokalnie i synchronizuje go do Neo4j.
-#
-#     Args:
-#         driver: Aktywne połączenie do bazy Neo4j.
-#         model: Nazwa modelu Ollama do budowy grafu (np. 'llama3').
-#     """
-#     # Inicjalizacja pustego grafu wiedzy
-#     initialize_knowledge_graph()
-#
-#     # Sprawdzamy model ZANIM zbudujemy graf
-#     # Inaczej błąd wyszedłby dopiero przy sync(), po kilkunastu minutach pracy LLM-a
-#     if validate:
-#         embed = EmbedModel(EMBED_MODEL)         # Załaduj model embedding-ów
-#         test_vector = embed.encode("TEST")[0]   # Wygeneruj wektor testowy
-#
-#         # Walidacja wymiaru wektora
-#         if len(test_vector) != EMBED_MODEL_DIM:
-#             raise RuntimeError(
-#                 f"EMBED_MODEL_DIM={EMBED_MODEL_DIM}, ale model '{EMBED_MODEL}' "
-#                 f"zwraca wektory o wymiarze {len(test_vector)}. Popraw .env."
-#             )
-#
-#     # Załaduj dokumenty i sprawdź duplikaty
-#     documents = load_knowledge()
-#     check_for_duplicates(documents)
-#
-#     # Sklej reprezentacje tekstowe wszystkich dokumentów
-#     document_string: str = "\n\n".join(
-#         [document.__repr__() for document in documents]
-#     )
-#
-#     # --- Krok 5: Wyświetl dokumenty i buduj graf przez LLM ---
-#     print(5)
-#     print(document_string)
-#     build_graph_with_ollama(model=model, documents=document_string)
-#
-#     # (Import lokalny – unikamy cyklicznych zależności przy starcie modułu)
-#     from app.plan import register_system_schema, attach_steps_from_documents
-#
-#     # --- Krok 6: Rejestracja schematu systemowego w grafie ---
-#     print(6)
-#     register_message = register_system_schema(graph.knowledge_graph)
-#     print("\n".join(register_message))
-#
-#     # --- Krok 7: Dołączenie kroków z dokumentów ---
-#     print(7)
-#     report = attach_steps_from_documents(graph.knowledge_graph, documents)
-#     print(report["kroki"], report["wspoldzielone"], report["stany"])
-#     print("BRAKUJĄCE:", report["brakujace"])
-#
-#     # --- Krok 8: Lokalny zapis grafu ---
-#     print(8)
-#     print_graph()
-#     saved_path = graph.save_graph(model=model, embed_model=EMBED_MODEL)
-#     print(f"\nGraf zapisany: {saved_path}")
-#
-#     # Pauza przed synchronizacją – użytkownik może zweryfikować dane
-#     input("[ENTER], aby zsynchronizować do bazy danych...")
-#
-#     # --- Krok 9: Synchronizacja grafu do Neo4j ---
-#     print(9)
-#     result = graph.knowledge_graph.sync(
-#         driver=driver,
-#         embed_model=embed,
-#         embed_dimensions=EMBED_MODEL_DIM,
-#     )
-#
-#     print(result)
-#     print("\nGotowe!\nMożesz podglądać wyniki na: http://localhost:7474")
+    # Zapisujemy sporządzony graf
+    print(f"Ingest LLM: SAVING")
+    save_graph(model=model, directory=GRAPHS_DIR / "poststeps")
+
+    # Synkujemy i tworzymy embeddingi
+    print(f"Ingest LLM: SYNCING")
+    graph_n.knowledge_graph.sync(
+            driver=driver,
+            embed_model=embed,
+            # 'dim', nie EMBEDDING_DIM: tym samym wymiarem walidowaliśmy model
+            # wyżej, a indeks wektorowy powstaje z 'IF NOT EXISTS' -- utworzony
+            # raz o złym rozmiarze nigdy się sam nie poprawi.
+            embed_dimensions=dim,
+        )
+
+    # Zapis PO sync: podajemy nazwę modelu embeddingów, co włącza zapis wektorów.
+    # Dzięki temu kopia zapasowa nie wymaga ich przeliczania od nowa.
+    print(f"Ingest LLM: SAVING")
+    save_graph(model=model, directory=GRAPHS_DIR / "final", embed_model_name=EMBEDDING_MODEL)
+
+    print("Ingest LLM: DONE! Możesz podglądać wyniki na: http://localhost:7474")

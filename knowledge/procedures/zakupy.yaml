@@ -22,22 +22,39 @@
       provides: [zz.nowe]
     - text: W polu Dostawca wybierz kontrahenta, u którego zamawiasz
       anchor: field.po-supplier
-      action: { kind: select, label: "Stalmex" }
+      action:
+        kind: ask
+        inputType: select
+        label: U którego dostawcy zamawiasz?
+        hint: Lista pokazuje tylko dostawców — odbiorcy są ukryci. Nieaktywnego dostawcy nie da się wybrać.
       requires: [zz.nowe]
       provides: [zz.dostawca]
       note: Lista pokazuje tylko dostawców — odbiorcy są ukryci
     - text: W polu Magazyn dostawy wybierz, dokąd ma trafić towar
       anchor: field.po-warehouse
-      action: { kind: select, label: "MAG-GL" }
+      action:
+        kind: ask
+        inputType: select
+        label: Na który magazyn ma trafić dostawa?
+        hint: Z tego magazynu powstanie później dokument PZ przy przyjęciu dostawy.
       requires: [zz.nowe]
       provides: [zz.magazyn]
     - text: Ustaw oczekiwaną datę dostawy
       anchor: field.po-expected-date
-      action: { kind: fill, value: "2026-08-20" }
+      action:
+        kind: ask
+        inputType: date
+        label: Kiedy spodziewasz się dostawy?
+        hint: Data orientacyjna, służy do planowania. Nie blokuje przyjęcia wcześniej ani później.
       requires: [zz.nowe]
       provides: [zz.data-dostawy]
     - text: W sekcji Dodatkowe możesz wpisać uwagi widoczne na wydruku zamówienia
       anchor: field.po-notes
+      action:
+        kind: ask
+        inputType: text
+        label: Jakie uwagi dla dostawcy?
+        hint: Widoczne na wydruku zamówienia. Pole opcjonalne — zostaw puste, jeśli nie masz uwag.
       requires: [zz.nowe]
       provides: [zz.uwagi]
     - text: W stopce karty Pozycje kliknij Dodaj pozycję
@@ -47,13 +64,21 @@
       provides: [zz.pozycja-nowa]
     - text: Wybierz produkt z listy
       anchor: field.po-line-product
-      action: { kind: select, label: "SR-M8-100" }
+      action:
+        kind: ask
+        inputType: select
+        label: Który produkt zamawiasz?
       requires: [zz.pozycja-nowa]
       provides: [zz.pozycja-produkt]
       note: Cena podpowiada się automatycznie z kartoteki produktu
     - text: Wpisz zamawianą ilość
       anchor: field.po-line-quantity
-      action: { kind: fill, value: "500" }
+      action:
+        kind: ask
+        inputType: number
+        label: Ile sztuk zamawiasz?
+        hint: Ilość w jednostce z kartoteki produktu.
+        suggestions: ["1", "10", "100"]
       requires: [zz.pozycja-produkt]
       provides: [zz.pozycja-ilosc]
     - text: Sprawdź wiersz Razem netto w stopce tabeli pozycji
@@ -91,6 +116,10 @@
       provides: [ekran.zamowienia-zakupu]
     - text: Otwórz szkic zamówienia klikając jego numer na liście
       anchor: table.purchase-orders
+      action:
+        kind: manual
+        label: Otwórz właściwe zamówienie, klikając jego numer
+        hint: Sprawdź kolumnę Status — operacja, którą chcesz wykonać, jest dostępna tylko w określonym statusie.
       requires: [ekran.zamowienia-zakupu, zz.zapisane]
       provides: [zz.otwarte-szkic]
     - text: Sprawdź pozycje i wiersz Razem netto w stopce tabeli
@@ -126,6 +155,10 @@
       provides: [ekran.zamowienia-zakupu]
     - text: Otwórz zamówienie w statusie Zamówione klikając jego numer na liście
       anchor: table.purchase-orders
+      action:
+        kind: manual
+        label: Otwórz właściwe zamówienie, klikając jego numer
+        hint: Sprawdź kolumnę Status — operacja, którą chcesz wykonać, jest dostępna tylko w określonym statusie.
       requires: [ekran.zamowienia-zakupu, zz.wyslane]
       provides: [zz.otwarte-zamowione]
     - text: W stopce karty Pozycje kliknij Przyjmij dostawę
@@ -167,33 +200,59 @@
       provides: [fz.nowa]
     - text: W sekcji Dane faktury wybierz zamówienie w polu Zamówienie zakupu, jeśli faktura go dotyczy
       anchor: field.pi-purchase-order
-      action: { kind: select, label: "ZZ-2026-0001" }
+      action:
+        kind: ask
+        inputType: select
+        label: Do którego zamówienia dotyczy ta faktura?
+        hint: Wybór zamówienia wypełni dostawcę i pozycje automatycznie. Zostaw puste, jeśli faktura nie dotyczy żadnego zamówienia.
       optional: true
       requires: [fz.nowa, zz.wyslane]
       provides: [fz.powiazana-zz, fz.dostawca]
       note: Krok opcjonalny — pomiń, jeśli faktura nie dotyczy zamówienia. Wybór zamówienia wypełnia dostawcę i pozycje automatycznie
     - text: Jeśli faktura nie dotyczy żadnego zamówienia, wskaż dostawcę ręcznie
       anchor: field.pi-supplier
+      action:
+        kind: ask
+        inputType: select
+        label: Od którego dostawcy jest ta faktura?
+        hint: Wypełniasz ręcznie tylko wtedy, gdy faktura nie dotyczy żadnego zamówienia. Przy fakturze powiązanej pole uzupełnia się samo.
       requires: [fz.nowa]
       provides: [fz.dostawca]
     - text: Wpisz numer faktury nadany przez dostawcę
       anchor: field.pi-external-number
-      action: { kind: fill, value: "FV 2026/08/114" }
+      action:
+        kind: ask
+        inputType: text
+        label: Jaki numer ma faktura u dostawcy?
+        hint: Numer nadany przez dostawcę, np. FV 2026/08/114. Musi być unikalny w obrębie tego dostawcy — duplikat zwróci ERR-5201.
+        suggestions: [FV 2026/08/1, FS 4412/26]
       requires: [fz.nowa]
       provides: [fz.numer]
       note: Podpowiedź pod polem przypomina, że numer musi być unikalny w obrębie dostawcy
     - text: W sekcji Terminy ustaw datę wystawienia
       anchor: field.pi-issue-date
-      action: { kind: fill, value: "2026-08-11" }
+      action:
+        kind: ask
+        inputType: date
+        label: Kiedy faktura została wystawiona?
+        hint: Data z dokumentu dostawcy, nie data wprowadzenia do systemu.
       requires: [fz.nowa]
       provides: [fz.data-wystawienia]
     - text: Ustaw termin płatności
       anchor: field.pi-due-date
-      action: { kind: fill, value: "2026-08-25" }
+      action:
+        kind: ask
+        inputType: date
+        label: Jaki jest termin płatności?
+        hint: Data z faktury. Po niej system sortuje zobowiązania.
       requires: [fz.nowa]
       provides: [fz.termin-platnosci]
     - text: W tabeli pozycji sprawdź stawki VAT
       anchor: field.pi-line-vat
+      action:
+        kind: manual
+        label: Sprawdź i popraw stawki VAT we wszystkich pozycjach
+        hint: Domyślnie 23%. Zmień tam, gdzie faktura mówi inaczej — stawka wpływa na kwotę brutto. Gdy skończysz, kliknij Kontynuuj.
       requires: [fz.nowa]
       provides: [fz.vat-sprawdzony]
       note: Domyślna stawka to 23%, zmień ją tam, gdzie faktura mówi inaczej
@@ -238,17 +297,28 @@
       note: Przy fakturze powiązanej z zamówieniem pozycje wchodzą automatycznie
     - text: Wybierz produkt z listy
       anchor: field.pi-line-product
-      action: { kind: select, label: "SR-M8-100" }
+      action:
+        kind: ask
+        inputType: select
+        label: Który produkt jest na fakturze?
       requires: [fz.pozycja-nowa]
       provides: [fz.pozycja-produkt]
     - text: Wpisz ilość z faktury
       anchor: field.pi-line-quantity
-      action: { kind: fill, value: "500" }
+      action:
+        kind: ask
+        inputType: number
+        label: Jaka ilość jest na fakturze?
+        suggestions: ["1", "10", "100"]
       requires: [fz.pozycja-produkt]
       provides: [fz.pozycja-ilosc]
     - text: Wpisz cenę netto z faktury
       anchor: field.pi-line-price
-      action: { kind: fill, value: "2.30" }
+      action:
+        kind: ask
+        inputType: number
+        label: Jaka cena netto jest na fakturze?
+        hint: Przepisz dokładnie z dokumentu dostawcy — to ona decyduje o wartości zobowiązania.
       requires: [fz.pozycja-produkt]
       provides: [fz.pozycja-cena]
       note: Cena podpowiada się z kartoteki, ale faktura dostawcy ma pierwszeństwo
@@ -323,6 +393,10 @@
       provides: [ekran.zamowienia-zakupu]
     - text: Otwórz zamówienie w statusie Zrealizowane klikając jego numer na liście
       anchor: table.purchase-orders
+      action:
+        kind: manual
+        label: Otwórz właściwe zamówienie, klikając jego numer
+        hint: Sprawdź kolumnę Status — operacja, którą chcesz wykonać, jest dostępna tylko w określonym statusie.
       requires: [ekran.zamowienia-zakupu, zz.zrealizowane]
       provides: [zz.otwarte-zrealizowane]
     - text: W stopce karty Pozycje kliknij Pokaż dokument PZ

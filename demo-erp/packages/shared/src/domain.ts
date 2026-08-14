@@ -35,6 +35,19 @@ export const ROLE_LABELS: Record<Role, string> = {
   kierownik: "Kierownik",
 };
 
+/** Jednostki miary dostępne w kartotece. Lista zamknięta — ułatwia autopilota. */
+export const UNITS = ["szt", "kg", "m", "l", "par", "kpl"] as const;
+export type Unit = (typeof UNITS)[number];
+
+export const COUNTERPARTY_KINDS = ["supplier", "customer", "both"] as const;
+export type CounterpartyKind = (typeof COUNTERPARTY_KINDS)[number];
+
+export const COUNTERPARTY_KIND_LABELS: Record<CounterpartyKind, string> = {
+  supplier: "Dostawca",
+  customer: "Odbiorca",
+  both: "Dostawca i odbiorca",
+};
+
 /** Miejsca powstawania kosztów — słownik dekoracyjny, pole zablokowane. */
 export const COST_CENTERS = ["MPK-100 Produkcja", "MPK-200 Utrzymanie ruchu", "MPK-300 Administracja"] as const;
 
@@ -44,6 +57,11 @@ export const ProductSchema = z.object({
   id: z.string(),
   sku: z.string(),
   name: z.string(),
+  /**
+   * Celowo z.string(), nie z.enum(UNITS): to schemat danych PRZYCHODZĄCYCH
+   * z serwera. Rekord z jednostką spoza listy ma się wczytać i wyświetlić,
+   * a nie wywalić całą stronę. Wejście zawęża dopiero CreateProductSchema.
+   */
   unit: z.string(),
   minStock: z.number().nonnegative(),
   /** Cena ewidencyjna — podpowiadana na pozycji dokumentu. */
@@ -114,67 +132,107 @@ export interface StockLevel {
 export const CreateLineSchema = z.object({
   productId: z.string().min(1, "Wybierz produkt"),
   quantity: z
-    .number({ invalid_type_error: "Ilość musi być liczbą" })
-    .positive("Ilość musi być większa od zera"),
+      .number({ invalid_type_error: "Ilość musi być liczbą" })
+      .positive("Ilość musi być większa od zera"),
   unitPrice: z
-    .number({ invalid_type_error: "Cena musi być liczbą" })
-    .nonnegative("Cena nie może być ujemna"),
+      .number({ invalid_type_error: "Cena musi być liczbą" })
+      .nonnegative("Cena nie może być ujemna"),
   location: z.string().nullable(),
 });
 export type CreateLineInput = z.infer<typeof CreateLineSchema>;
 
 export const CreateDocumentSchema = z
-  .object({
-    type: z.enum(DOC_TYPES, {
-      errorMap: () => ({ message: "Wybierz typ dokumentu" }),
-    }),
-    warehouseFromId: z.string().nullable(),
-    warehouseToId: z.string().nullable(),
-    counterpartyId: z.string().nullable(),
-    documentDate: z.string().min(1, "Podaj datę dokumentu"),
-    operationDate: z.string().min(1, "Podaj datę operacji"),
-    externalNumber: z.string().nullable(),
-    notes: z.string().nullable(),
-    lines: z.array(CreateLineSchema),
-  })
-  .superRefine((doc, ctx) => {
-    if ((doc.type === "WZ" || doc.type === "MM") && !doc.warehouseFromId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["warehouseFromId"],
-        message: "Wybierz magazyn źródłowy",
-      });
-    }
-    if ((doc.type === "PZ" || doc.type === "MM") && !doc.warehouseToId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["warehouseToId"],
-        message: "Wybierz magazyn docelowy",
-      });
-    }
-    if ((doc.type === "PZ" || doc.type === "WZ") && !doc.counterpartyId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["counterpartyId"],
-        message: doc.type === "PZ" ? "Wybierz dostawcę" : "Wybierz odbiorcę",
-      });
-    }
-    if (doc.operationDate && doc.documentDate && doc.operationDate < doc.documentDate) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["operationDate"],
-        message: "Data operacji nie może być wcześniejsza niż data dokumentu",
-      });
-    }
-  });
+    .object({
+      type: z.enum(DOC_TYPES, {
+        errorMap: () => ({ message: "Wybierz typ dokumentu" }),
+      }),
+      warehouseFromId: z.string().nullable(),
+      warehouseToId: z.string().nullable(),
+      counterpartyId: z.string().nullable(),
+      documentDate: z.string().min(1, "Podaj datę dokumentu"),
+      operationDate: z.string().min(1, "Podaj datę operacji"),
+      externalNumber: z.string().nullable(),
+      notes: z.string().nullable(),
+      lines: z.array(CreateLineSchema),
+    })
+    .superRefine((doc, ctx) => {
+      if ((doc.type === "WZ" || doc.type === "MM") && !doc.warehouseFromId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["warehouseFromId"],
+          message: "Wybierz magazyn źródłowy",
+        });
+      }
+      if ((doc.type === "PZ" || doc.type === "MM") && !doc.warehouseToId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["warehouseToId"],
+          message: "Wybierz magazyn docelowy",
+        });
+      }
+      if ((doc.type === "PZ" || doc.type === "WZ") && !doc.counterpartyId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["counterpartyId"],
+          message: doc.type === "PZ" ? "Wybierz dostawcę" : "Wybierz odbiorcę",
+        });
+      }
+      if (doc.operationDate && doc.documentDate && doc.operationDate < doc.documentDate) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["operationDate"],
+          message: "Data operacji nie może być wcześniejsza niż data dokumentu",
+        });
+      }
+    });
 export type CreateDocumentInput = z.infer<typeof CreateDocumentSchema>;
 
 /** Wartość pozycji — używane w UI i w podsumowaniu dokumentu. */
 export const lineValue = (l: { quantity: number; unitPrice: number }): number =>
-  Math.round(l.quantity * l.unitPrice * 100) / 100;
+    Math.round(l.quantity * l.unitPrice * 100) / 100;
 
 export const formatPLN = (v: number): string =>
-  v.toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    v.toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// ============================ KARTOTEKA PRODUKTÓW ==========================
+// Zakładanie i wycofywanie indeksów magazynowych. Indeks (SKU) jest unikalny
+// GLOBALNIE, w odróżnieniu od kodu lokalizacji, któremu wystarczy unikalność
+// w obrębie magazynu.
+
+export const CreateProductSchema = z.object({
+  sku: z
+      .string()
+      .min(2, "Podaj indeks produktu, np. SR-M8-100")
+      .max(20, "Indeks może mieć najwyżej 20 znaków"),
+  name: z.string().min(3, "Podaj nazwę produktu"),
+  unit: z.enum(UNITS, { errorMap: () => ({ message: "Wybierz jednostkę miary" }) }),
+  category: z.string().min(1, "Wybierz kategorię"),
+  minStock: z
+      .number({ invalid_type_error: "Stan minimalny musi być liczbą" })
+      .nonnegative("Stan minimalny nie może być ujemny"),
+  price: z
+      .number({ invalid_type_error: "Cena musi być liczbą" })
+      .nonnegative("Cena nie może być ujemna"),
+});
+export type CreateProductInput = z.infer<typeof CreateProductSchema>;
+
+// =========================== KARTOTEKA KONTRAHENTÓW =========================
+
+export const CreateCounterpartySchema = z.object({
+  code: z
+      .string()
+      .min(3, "Podaj kod kontrahenta, np. DOS-003")
+      .max(12, "Kod może mieć najwyżej 12 znaków"),
+  name: z.string().min(3, "Podaj nazwę kontrahenta"),
+  taxId: z
+      .string()
+      .regex(/^\d{10}$/, "NIP musi mieć dokładnie 10 cyfr, bez myślników"),
+  city: z.string().min(2, "Podaj miejscowość"),
+  kind: z.enum(COUNTERPARTY_KINDS, {
+    errorMap: () => ({ message: "Wybierz rodzaj kontrahenta" }),
+  }),
+});
+export type CreateCounterpartyInput = z.infer<typeof CreateCounterpartySchema>;
 
 // ============================ LOKALIZACJE ==================================
 
@@ -197,13 +255,13 @@ export type StorageLocation = z.infer<typeof StorageLocationSchema>;
 export const CreateLocationSchema = z.object({
   warehouseId: z.string().min(1, "Wybierz magazyn"),
   code: z
-    .string()
-    .min(2, "Podaj kod lokalizacji, np. A-01")
-    .max(10, "Kod może mieć najwyżej 10 znaków"),
+      .string()
+      .min(2, "Podaj kod lokalizacji, np. A-01")
+      .max(10, "Kod może mieć najwyżej 10 znaków"),
   description: z.string().nullable(),
   capacity: z
-    .number({ invalid_type_error: "Pojemność musi być liczbą" })
-    .nonnegative("Pojemność nie może być ujemna"),
+      .number({ invalid_type_error: "Pojemność musi być liczbą" })
+      .nonnegative("Pojemność nie może być ujemna"),
 });
 export type CreateLocationInput = z.infer<typeof CreateLocationSchema>;
 
@@ -281,15 +339,15 @@ export const CreatePurchaseOrderSchema = z.object({
   expectedDate: z.string().min(1, "Podaj oczekiwaną datę dostawy"),
   notes: z.string().nullable(),
   lines: z.array(
-    z.object({
-      productId: z.string().min(1, "Wybierz produkt"),
-      quantity: z
-        .number({ invalid_type_error: "Ilość musi być liczbą" })
-        .positive("Ilość musi być większa od zera"),
-      unitPrice: z
-        .number({ invalid_type_error: "Cena musi być liczbą" })
-        .nonnegative("Cena nie może być ujemna"),
-    }),
+      z.object({
+        productId: z.string().min(1, "Wybierz produkt"),
+        quantity: z
+            .number({ invalid_type_error: "Ilość musi być liczbą" })
+            .positive("Ilość musi być większa od zera"),
+        unitPrice: z
+            .number({ invalid_type_error: "Cena musi być liczbą" })
+            .nonnegative("Cena nie może być ujemna"),
+      }),
   ),
 });
 export type CreatePurchaseOrderInput = z.infer<typeof CreatePurchaseOrderSchema>;
@@ -338,15 +396,15 @@ export const CreateSalesOrderSchema = z.object({
   expectedDate: z.string().min(1, "Podaj oczekiwaną datę realizacji"),
   notes: z.string().nullable(),
   lines: z.array(
-    z.object({
-      productId: z.string().min(1, "Wybierz produkt"),
-      quantity: z
-        .number({ invalid_type_error: "Ilość musi być liczbą" })
-        .positive("Ilość musi być większa od zera"),
-      unitPrice: z
-        .number({ invalid_type_error: "Cena musi być liczbą" })
-        .nonnegative("Cena nie może być ujemna"),
-    }),
+      z.object({
+        productId: z.string().min(1, "Wybierz produkt"),
+        quantity: z
+            .number({ invalid_type_error: "Ilość musi być liczbą" })
+            .positive("Ilość musi być większa od zera"),
+        unitPrice: z
+            .number({ invalid_type_error: "Cena musi być liczbą" })
+            .nonnegative("Cena nie może być ujemna"),
+      }),
   ),
 });
 export type CreateSalesOrderInput = z.infer<typeof CreateSalesOrderSchema>;
@@ -399,68 +457,16 @@ export const CreatePurchaseInvoiceSchema = z.object({
   purchaseOrderId: z.string().nullable(),
   notes: z.string().nullable(),
   lines: z.array(
-    z.object({
-      productId: z.string().min(1, "Wybierz produkt"),
-      quantity: z
-        .number({ invalid_type_error: "Ilość musi być liczbą" })
-        .positive("Ilość musi być większa od zera"),
-      unitPrice: z
-        .number({ invalid_type_error: "Cena musi być liczbą" })
-        .nonnegative("Cena nie może być ujemna"),
-      vatRate: z.number(),
-    }),
+      z.object({
+        productId: z.string().min(1, "Wybierz produkt"),
+        quantity: z
+            .number({ invalid_type_error: "Ilość musi być liczbą" })
+            .positive("Ilość musi być większa od zera"),
+        unitPrice: z
+            .number({ invalid_type_error: "Cena musi być liczbą" })
+            .nonnegative("Cena nie może być ujemna"),
+        vatRate: z.number(),
+      }),
   ),
 });
 export type CreatePurchaseInvoiceInput = z.infer<typeof CreatePurchaseInvoiceSchema>;
-
-// ============================ KARTOTEKA PRODUKTÓW ==========================
-// Zakładanie i wycofywanie indeksów magazynowych. Kod produktu (SKU) jest
-// unikalny globalnie, w odróżnieniu od kodu lokalizacji, który wystarczy,
-// że jest unikalny w obrębie magazynu.
-
-/** Jednostki miary dostępne w kartotece. Lista zamknięta — ułatwia autopilota. */
-export const UNITS = ["szt", "kg", "m", "l", "par", "kpl"] as const;
-export type Unit = (typeof UNITS)[number];
-
-export const CreateProductSchema = z.object({
-  sku: z
-      .string()
-      .min(2, "Podaj indeks produktu, np. SR-M8-100")
-      .max(20, "Indeks może mieć najwyżej 20 znaków"),
-  name: z.string().min(3, "Podaj nazwę produktu"),
-  unit: z.enum(UNITS, { errorMap: () => ({ message: "Wybierz jednostkę miary" }) }),
-  category: z.string().min(1, "Wybierz kategorię"),
-  minStock: z
-      .number({ invalid_type_error: "Stan minimalny musi być liczbą" })
-      .nonnegative("Stan minimalny nie może być ujemny"),
-  price: z
-      .number({ invalid_type_error: "Cena musi być liczbą" })
-      .nonnegative("Cena nie może być ujemna"),
-});
-export type CreateProductInput = z.infer<typeof CreateProductSchema>;
-
-// =========================== KARTOTEKA KONTRAHENTÓW =========================
-
-export const COUNTERPARTY_KINDS = ["supplier", "customer", "both"] as const;
-
-export const COUNTERPARTY_KIND_LABELS: Record<(typeof COUNTERPARTY_KINDS)[number], string> = {
-  supplier: "Dostawca",
-  customer: "Odbiorca",
-  both: "Dostawca i odbiorca",
-};
-
-export const CreateCounterpartySchema = z.object({
-  code: z
-      .string()
-      .min(3, "Podaj kod kontrahenta, np. DOS-003")
-      .max(12, "Kod może mieć najwyżej 12 znaków"),
-  name: z.string().min(3, "Podaj nazwę kontrahenta"),
-  taxId: z
-      .string()
-      .regex(/^\d{10}$/, "NIP musi mieć dokładnie 10 cyfr, bez myślników"),
-  city: z.string().min(2, "Podaj miejscowość"),
-  kind: z.enum(COUNTERPARTY_KINDS, {
-    errorMap: () => ({ message: "Wybierz rodzaj kontrahenta" }),
-  }),
-});
-export type CreateCounterpartyInput = z.infer<typeof CreateCounterpartySchema>;
