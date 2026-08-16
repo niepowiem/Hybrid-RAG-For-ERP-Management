@@ -511,8 +511,8 @@ class _LLMProviderAPI(ABC):
                 # Komunikat idzie kanałem 'content', żeby 'pretty' go pokazało --
                 # inaczej wygląda to jak zawieszenie procesu.
                 yield {"type": "content",
-                       "text": f"\n[limit tokenów, czekam {delay:.1f}s "
-                               f"(próba {attempt + 1}/{self.MAX_RETRIES})]\n"}
+                       "text": f"\n[Limit Tokenów, Czekam... {delay:.1f}s "
+                               f"(Próba {attempt + 1} / {self.MAX_RETRIES})]\n"}
 
                 time.sleep(delay)
 

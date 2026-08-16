@@ -20,6 +20,7 @@ Trzy wejścia publiczne:
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
 
 from app import graph_n as graph
@@ -32,6 +33,7 @@ from app.plan_n import (
     parse_action,
     related_procedures,
     resolving_procedures,
+    step_owner,
 )
 
 # ======================================================================
@@ -47,6 +49,10 @@ TOP_K: int = int(os.getenv("ASSISTANT_TOP_K", "5"))
 
 # Nadmiarowe wyniki pobierane po to, by odsianie węzłów Krok nie zostawiło pustki.
 EXTRA_K: int = int(os.getenv("ASSISTANT_EXTRA_K", "10"))
+
+# Ile ostatnich tur rozmowy bierzemy pod uwagę. Więcej to więcej tokenów
+# w każdym żądaniu, a doprecyzowanie prawie zawsze dotyczy ostatniej odpowiedzi.
+HISTORY_TURNS: int = int(os.getenv("ASSISTANT_HISTORY_TURNS", "3"))
 
 # Ile procedur maksymalnie łączymy w jeden plan. Powyżej tego zadanie przestaje
 # być "zrób A i B", a zaczyna być listą życzeń, której użytkownik i tak nie
@@ -148,6 +154,27 @@ _INTRO_SYSTEM: str = (
     "Piszesz JEDNO krótkie zdanie wprowadzające do instrukcji w systemie ERP. "
     "Nie wymieniaj kroków -- użytkownik zobaczy je pod spodem. "
     "Nie dodawaj powitań ani pytań. Maksymalnie 20 słów, po polsku."
+)
+
+_INTENT_SYSTEM: str = (
+    "Klasyfikujesz wiadomość użytkownika w rozmowie z asystentem systemu ERP.\n"
+    "Odpowiadasz JEDNYM wierszem, bez wyjaśnień, jedną z trzech etykiet:\n\n"
+    "NOWE — użytkownik pyta o coś innego niż poprzednio\n"
+    "DOPRECYZOWANIE — poprawia albo zawęża poprzednie pytanie "
+    "('nie, chodziło mi o WZ', 'a dla magazynu produkcji', 'to samo, ale bez faktury')\n"
+    "KROK <numer> — pyta o konkretny krok poprzedniej instrukcji "
+    "('co znaczy krok 4', 'wyjaśnij trzeci punkt', 'po co ten drugi krok')\n\n"
+    "Gdy nie ma poprzedniej odpowiedzi, zawsze NOWE."
+)
+
+_STEP_SYSTEM: str = (
+    "Wyjaśniasz użytkownikowi JEDEN krok instrukcji w systemie ERP.\n\n"
+    "Opierasz się WYŁĄCZNIE na podanym materiale. Nie wymyślaj nazw przycisków, "
+    "pól ani skutków, których w materiale nie ma. Jeśli materiał nie odpowiada "
+    "na pytanie, powiedz to wprost.\n\n"
+    "Nie powtarzaj treści kroku dosłownie — użytkownik ma ją przed oczami. "
+    "Wyjaśnij, po co ten krok jest i co się stanie, gdy go pominiesz. "
+    "Odpowiadaj po polsku, maksymalnie 4 zdania."
 )
 
 _CONCEPT_SYSTEM: str = (
@@ -415,7 +442,12 @@ def _to_assistant_step(row: dict[str, Any]) -> dict[str, Any] | None:
     if not text:
         return None
 
+    # 'id' idzie do frontu, żeby mógł odesłać je w historii przy pytaniu
+    # o konkretny krok. Front go nie interpretuje -- to nieprzezroczysty klucz.
     step: dict[str, Any] = {"text": text}
+
+    if row.get("step_id"):
+        step["id"] = row["step_id"]
 
     if row.get("anchor"):
         step["anchor"] = row["anchor"]
@@ -505,6 +537,145 @@ def _enrich_question(question: str, context: dict[str, Any]) -> str:
     return question
 
 
+# ======================================================================
+# PAMIĘĆ ROZMOWY
+# ======================================================================
+# Historia jest BEZSTANOWA po stronie serwera: przysyła ją front przy każdym
+# żądaniu. Dzięki temu backend może działać w wielu procesach, a odświeżenie
+# strony zaczyna rozmowę od nowa zamiast zostawiać osierocone sesje.
+
+def _classify(question: str, history: list[dict[str, Any]]) -> tuple[str, int | None]:
+    """
+    Rozpoznaje, czy wiadomość to nowe zadanie, doprecyzowanie poprzedniego,
+    czy pytanie o konkretny krok.
+
+    :return: ('new' | 'refine' | 'step', numer kroku licząc od 1 albo None)
+    """
+
+    if not history:
+        return "new", None
+
+    ostatnia = history[-1]
+
+    # Krótki opis poprzedniej tury wystarcza -- pełne kroki tylko rozmyłyby
+    # obraz, a model ma rozstrzygnąć intencję, nie treść.
+    kontekst = (f"Poprzednie pytanie: {ostatnia.get('question', '')}\n"
+                f"Poprzednia odpowiedź: {(ostatnia.get('text') or '')[:200]}\n"
+                f"Liczba kroków w poprzedniej instrukcji: {len(ostatnia.get('steps') or [])}")
+
+    chat = ChatModel(model=AGENT_MODEL, system=_INTENT_SYSTEM, memory=False)
+
+    try:
+        odpowiedz = chat.ask(f"{kontekst}\n\nNowa wiadomość: {question}",
+                             think=False, options=_SHORT_ANSWER).strip().upper()
+    finally:
+        chat.close()
+
+    if match := re.search(r"KROK\s*(\d+)", odpowiedz):
+        return "step", int(match.group(1))
+
+    if "DOPRECYZ" in odpowiedz:
+        return "refine", None
+
+    return "new", None
+
+
+def _step_material(step: dict[str, Any], index: dict[str, dict[str, Any]]) -> str:
+    """
+    Materiał, na którym model opiera wyjaśnienie kroku. Wyłącznie dane z grafu --
+    model niczego tu nie dopowiada.
+    """
+
+    czesci: list[str] = [f"Treść kroku: {step.get('text', '')}"]
+
+    opis = index.get(step.get("id") or "", {})
+
+    if opis.get("why"):
+        czesci.append(f"Po co: {opis['why']}")
+
+    if opis.get("note"):
+        czesci.append(f"Uwaga z dokumentacji: {opis['note']}")
+
+    if opis.get("anchor"):
+        czesci.append(f"Element interfejsu: {opis['anchor']}")
+
+    # Stany tłumaczą zależności: czego krok wymaga i co odblokowuje.
+    # To jedyne miejsce, gdzie użytkownik może zobaczyć, dlaczego kolejność
+    # kroków jest taka, a nie inna.
+    if opis.get("requires"):
+        czesci.append("Wymaga wcześniej: " + ", ".join(sorted(opis["requires"])))
+
+    if opis.get("provides"):
+        czesci.append("Umożliwia dalej: " + ", ".join(sorted(opis["provides"])))
+
+    if step.get("id") and graph.graph_driver is not None:
+        if wlasciciel := step_owner(graph.graph_driver, step["id"]):
+            czesci.append(f"Krok nr {wlasciciel['order']} procedury: {wlasciciel['title']}")
+
+    return "\n".join(czesci)
+
+
+def _answer_about_step(question: str, numer: int,
+                       history: list[dict[str, Any]]) -> dict[str, Any]:
+    """
+    Odpowiada na pytanie o konkretny krok ostatniej instrukcji.
+
+    Nie buduje nowego planu: użytkownik ma instrukcję przed oczami i chce
+    zrozumieć jeden punkt, a nie dostać ją jeszcze raz.
+    """
+
+    kroki = (history[-1].get("steps") or []) if history else []
+
+    if not 1 <= numer <= len(kroki):
+        return {"text": f"Poprzednia instrukcja ma {len(kroki)} kroków — nie ma kroku {numer}.",
+                "steps": [], "sources": [], "refused": True}
+
+    krok = kroki[numer - 1]
+    material = _step_material(krok, get_index())
+
+    # Pojęcie powiązane tematycznie: to ono zamienia "kliknij Zatwierdź"
+    # w wyjaśnienie, czym różni się szkic od dokumentu zatwierdzonego.
+    for trafienie in _search(krok.get("text", ""))[:1]:
+        wlasciwosci = trafienie.get("properties", {})
+
+        if not goal_states(graph.graph_driver, trafienie["node_id"]):
+            tresc = " ".join(v for k, v in wlasciwosci.items()
+                             if isinstance(v, str) and k not in _SYSTEM_KEYS)
+
+            if tresc.strip():
+                material += f"\n\nPowiązane pojęcie z bazy wiedzy: {tresc[:400]}"
+
+    chat = ChatModel(model=AGENT_MODEL, system=_STEP_SYSTEM, memory=False)
+
+    try:
+        text = chat.ask(f"Pytanie: {question}\n\nMateriał o kroku {numer}:\n{material}",
+                        think=False, options=_SHORT_ANSWER).strip()
+    finally:
+        chat.close()
+
+    if not text:
+        return {"text": f"Nie mam więcej informacji o kroku {numer}.",
+                "steps": [], "sources": [], "refused": True}
+
+    return {"text": text, "steps": [], "sources": [], "refused": False}
+
+
+def _merge_question(question: str, history: list[dict[str, Any]]) -> str:
+    """
+    Scala doprecyzowanie z poprzednim pytaniem.
+
+    Samo "nie, dla magazynu produkcji" nie ma sensu jako zapytanie do
+    wyszukiwania semantycznego -- brakuje w nim rzeczownika, którego dotyczy.
+    """
+
+    poprzednie = history[-1].get("question", "") if history else ""
+
+    if not poprzednie:
+        return question
+
+    return f"{poprzednie} — z doprecyzowaniem: {question}"
+
+
 def _refusal(near_misses: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """
     Odmowa z podpowiedzią. Zamiast ślepego zaułka pokazujemy trzy najbliższe
@@ -533,12 +704,21 @@ def _require_initialized() -> None:
 # WEJŚCIA PUBLICZNE
 # ======================================================================
 
-def answer(question: str, context: dict[str, Any] | None = None) -> dict[str, Any]:
+def answer(question: str, context: dict[str, Any] | None = None,
+           history: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """
-    Główne wejście: pytanie + kontekst UI -> AssistantReply.
+    Główne wejście: pytanie + kontekst UI + historia -> AssistantReply.
+
+    Historia zmienia SPOSÓB odpowiedzi, nie tylko jej treść. Trzy przypadki:
+
+        nowe zadanie   -> wyszukanie, wybór procedur, plan
+        doprecyzowanie -> to samo, ale z pytaniem scalonym z poprzednim
+        pytanie o krok -> sama odpowiedź tekstowa, bez budowania planu
 
     :param question: pytanie użytkownika
     :param context: obiekt AssistantContext z sondy na froncie
+    :param history: poprzednie tury, od najstarszej. Bierzemy ostatnie
+        HISTORY_TURNS -- doprecyzowanie prawie zawsze dotyczy ostatniej odpowiedzi
     :return: słownik zgodny z AssistantReply {text, steps, sources, refused}
     """
 
@@ -547,6 +727,15 @@ def answer(question: str, context: dict[str, Any] | None = None) -> dict[str, An
 
     if not question.strip():
         return _refusal()
+
+    historia = (history or [])[-HISTORY_TURNS:]
+    intencja, numer_kroku = _classify(question, historia)
+
+    if intencja == "step" and numer_kroku is not None:
+        return _answer_about_step(question, numer_kroku, historia)
+
+    if intencja == "refine":
+        question = _merge_question(question, historia)
 
     question = _enrich_question(question, context)
 

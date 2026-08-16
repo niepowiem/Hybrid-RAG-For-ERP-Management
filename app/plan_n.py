@@ -570,6 +570,42 @@ def load_step_index(driver: Driver, database: str = "neo4j") -> dict[str, dict[s
     return index
 
 
+def step_owner(driver: Driver, step_id: str, database: str = "neo4j") -> dict[str, Any] | None:
+    """
+    Procedura, do której należy krok, wraz z jego numerem w niej.
+
+    Potrzebne, żeby odpowiedzieć na pytanie o konkretny krok: bez kontekstu
+    procedury wyjaśnienie brzmiałoby jak oderwane zdanie z instrukcji.
+
+    :return: {'procedure', 'order', 'title'} albo None, gdy krok nie należy
+        do żadnej procedury (nie powinno się zdarzyć po poprawnym ingeście)
+    """
+
+    query = f"""
+        MATCH (p)-[r:{STEP_RELATION}]->(k {{node_id: $step_id}})
+        RETURN p.node_id AS procedure, coalesce(r.order, 0) AS order, properties(p) AS props
+        ORDER BY order
+        LIMIT 1
+    """
+
+    records, _, _ = driver.execute_query(query, step_id=step_id, database_=database)
+
+    if not records:
+        return None
+
+    r = records[0]
+    props = dict(r["props"])
+    props.pop("embeddings", None)
+
+    # Tytuł procedury to pierwsza tekstowa właściwość spoza systemowych --
+    # nazwy parametrów nadaje LLM przy ingeście, więc nie zgadujemy klucza.
+    title = next((v for k, v in props.items()
+                  if isinstance(v, str) and v.strip()
+                  and k not in ("node_id", "klasa", "modul")), r["procedure"])
+
+    return {"procedure": r["procedure"], "order": r["order"], "title": title}
+
+
 def step_states(driver: Driver, step_ids: list[str],
                 database: str = "neo4j") -> dict[str, tuple[set[str], set[str]]]:
     """

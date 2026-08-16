@@ -64,6 +64,12 @@ export type AssistantAction =
 };
 
 export interface AssistantStep {
+  /**
+   * Nieprzezroczysty identyfikator kroku w grafie. Front go nie interpretuje,
+   * ale odsyła w historii — dzięki temu pytanie "co znaczy krok 4" trafia
+   * na konkretny węzeł, a nie na dopasowanie po treści.
+   */
+  id?: string;
   /** Tekst kroku — dosłownie z korpusu wiedzy, nie generowany przez model. */
   text: string;
   /** data-assistant-id elementu w UI. Cel podświetlenia i akcji. */
@@ -94,10 +100,33 @@ export interface AssistantReply {
   refused: boolean;
 }
 
+/**
+ * Jedna tura rozmowy, odsyłana z powrotem przy kolejnym pytaniu.
+ *
+ * Historia jest BEZSTANOWA po stronie serwera: to front trzyma rozmowę
+ * i dołącza ją do żądania. Dzięki temu backend może działać w wielu procesach,
+ * a odświeżenie strony po prostu zaczyna rozmowę od nowa — bez osieroconych sesji.
+ */
+export interface AssistantTurn {
+  question: string;
+  /** Sama odpowiedź tekstowa, bez kroków. */
+  text: string;
+  /** Identyfikatory dokumentów korpusu, na których oparta była odpowiedź. */
+  sources: string[];
+  /** Kroki poprzedniego planu — po nich rozwiązujemy "wyjaśnij krok 4". */
+  steps: { id?: string; text: string }[];
+}
+
 export interface AssistantRequest {
   question: string;
   /** Stan UI: ekran, pola formularza, ostatni błąd. */
   context?: Record<string, unknown>;
+  /**
+   * Poprzednie tury, od najstarszej. Pozwalają doprecyzować zadanie
+   * ("nie, chodziło mi o WZ") i pytać o konkretny krok instrukcji.
+   * Wysyłaj kilka ostatnich, nie całą rozmowę — każda tura to tokeny.
+   */
+  history?: AssistantTurn[];
 }
 
 /**

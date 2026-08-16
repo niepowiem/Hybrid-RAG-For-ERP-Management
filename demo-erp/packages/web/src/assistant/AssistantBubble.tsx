@@ -14,7 +14,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { AssistantAction, AssistantReply, AssistantStep } from "@demo-erp/shared";
+import type { AssistantAction, AssistantReply, AssistantStep, AssistantTurn } from "@demo-erp/shared";
 import { getRole } from "../api.js";
 import { askAssistant, recoverFromError } from "./client.js";
 import { getAssistantContext } from "./context.js";
@@ -107,9 +107,39 @@ export function AssistantBubble() {
   const kontekst = (): Record<string, unknown> =>
       getAssistantContext(getRole()) as unknown as Record<string, unknown>;
 
+  /**
+   * Historia rozmowy w kształcie oczekiwanym przez backend.
+   *
+   * Parujemy wiadomość użytkownika z następującą po niej odpowiedzią. Kroki
+   * odsyłamy razem z ich `id` — po nim serwer rozwiązuje pytanie "wyjaśnij
+   * krok 4" na konkretny węzeł grafu, zamiast zgadywać po treści.
+   */
+  const historia = (): AssistantTurn[] => {
+    const tury: AssistantTurn[] = [];
+
+    for (let i = 0; i < log.length - 1; i++) {
+      const pytanieUzytkownika = log[i];
+      const odpowiedzBota = log[i + 1];
+
+      if (pytanieUzytkownika?.rola !== "user" || odpowiedzBota?.rola !== "bot") continue;
+
+      tury.push({
+        question: pytanieUzytkownika.tresc,
+        text: odpowiedzBota.tresc,
+        sources: odpowiedzBota.reply?.sources ?? [],
+        steps: (odpowiedzBota.reply?.steps ?? []).map((s) => ({ id: s.id, text: s.text })),
+      });
+    }
+
+    // Kilka ostatnich tur wystarcza, a każda kosztuje tokeny w żądaniu.
+    return tury.slice(-3);
+  };
+
   async function wyslij(pytanieTekst?: string): Promise<void> {
     const tresc = (pytanieTekst ?? tekst).trim();
     if (!tresc || ladowanie || jedzie) return;
+
+    const poprzednieTury = historia();
 
     setTekst("");
     setNarracja(null);
@@ -117,7 +147,9 @@ export function AssistantBubble() {
     setLadowanie(true);
 
     try {
-      const reply = await askAssistant(tresc, kontekst());
+      // Historię pobieramy PRZED dopisaniem bieżącego pytania do logu --
+      // inaczej ostatnia tura byłaby niekompletna (pytanie bez odpowiedzi).
+      const reply = await askAssistant(tresc, kontekst(), poprzednieTury);
       setLog((l) => [...l, { rola: "bot", tresc: reply.text, reply }]);
     } finally {
       setLadowanie(false);
@@ -310,7 +342,19 @@ export function AssistantBubble() {
                                   aktywny?.msg === msgIndex && aktywny.krok === i ? "aktywny" : undefined
                                 }
                             >
-                              {s.text}
+                              {/* Klik w treść kroku wypełnia pole pytaniem o ten krok.
+                          Odkrywalne bez instrukcji: użytkownik i tak próbuje
+                          kliknąć w to, czego nie rozumie. */}
+                              <button
+                                  className="krok-pytaj"
+                                  title="Zapytaj o ten krok"
+                                  onClick={() => {
+                                    setTekst(`Wyjaśnij krok ${i + 1}`);
+                                    inputRef.current?.focus();
+                                  }}
+                              >
+                                {s.text}
+                              </button>
                               {s.why && <span className="why">{s.why}</span>}
                               {s.note && <span className="note">{s.note}</span>}
                               {s.action?.kind === "ask" && <span className="ask-tag">zapyta o wartość</span>}

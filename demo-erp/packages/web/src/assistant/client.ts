@@ -13,6 +13,7 @@ import type {
   AssistantReply,
   AssistantRequest,
   AssistantStep,
+  AssistantTurn,
 } from "@demo-erp/shared";
 import { askMock, recoverMock } from "./mock.js";
 
@@ -79,14 +80,17 @@ async function post<T>(sciezka: string, body: unknown, timeoutMs = 60_000): Prom
  * @param question treść pytania
  * @param context wynik getAssistantContext() — im więcej wie asystent o sytuacji,
  *   tym krótszy plan pokaże (pomija kroki, które użytkownik już wykonał)
+ * @param history poprzednie tury. Bez nich każde pytanie jest traktowane jak
+ *   nowe zadanie — doprecyzowanie ("nie, chodziło mi o WZ") nie zadziała
  */
 export async function askAssistant(
     question: string,
     context: Record<string, unknown>,
+    history: AssistantTurn[] = [],
 ): Promise<AssistantReply> {
   if (USE_MOCK) return askMock(question);
 
-  const body: AssistantRequest = { question, context };
+  const body: AssistantRequest = { question, context, history };
   const reply = await post<AssistantReply>("/assistant/ask", body);
 
   return reply ?? BLAD_SIECI;

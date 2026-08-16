@@ -30,3 +30,10 @@ Najważniejsze:
    2. Automatyczne pobieranie modeli
    3. Lepsza obsługa wyjątków
    4. Pisanie na bierząco testów i wyjątków kodu
+
+
+
+
+
+
+

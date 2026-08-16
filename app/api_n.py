@@ -45,8 +45,16 @@ MAX_RECOVERIES_PER_CODE: int = int(os.getenv("ASSISTANT_MAX_RECOVERIES", "2"))
 
 class AskRequest(BaseModel):
     question: str
+
     context: dict[str, Any] | None = None
     """Stan UI z sondy kontekstu: trasa, rola, widoczne akcje, pola, ostatni błąd."""
+
+    history: list[dict[str, Any]] | None = None
+    """
+    Poprzednie tury rozmowy, od najstarszej. Trzyma je FRONT, nie serwer:
+    dzięki temu backend pozostaje bezstanowy i skaluje się na wiele procesów,
+    a odświeżenie strony po prostu zaczyna rozmowę od nowa.
+    """
 
 
 class RecoverRequest(BaseModel):
@@ -113,9 +121,9 @@ def ask(req: AskRequest) -> dict[str, Any]:
 
     # Kontekst logujemy na DEBUG, bo to jedyne źródło wiedzy o tym, co front
     # faktycznie przysyła -- przydaje się przy strojeniu ROUTE_STATES.
-    logger.debug("ask: %r context=%s", req.question, req.context)
+    logger.debug("ask: %r historia=%s tur", req.question, len(req.history or []))
 
-    return _never_empty(answer(req.question, req.context))
+    return _never_empty(answer(req.question, req.context, req.history))
 
 
 @app.post("/assistant/recover")
