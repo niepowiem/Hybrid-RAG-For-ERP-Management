@@ -1,4 +1,4 @@
-from app.core_n import EmbeddingModel, ChatModel
+from app.core import EmbeddingModel, ChatModel
 
 def embed(embed_model: EmbeddingModel):
     r = embed_model.embed("TEST")

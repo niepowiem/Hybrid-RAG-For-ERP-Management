@@ -1,5 +1,5 @@
 """
-assistant_n.py -- warstwa odpowiedzi asystenta. Produkuje strukturę zgodną
+assistant.py -- warstwa odpowiedzi asystenta. Produkuje strukturę zgodną
 z AssistantReply z packages/shared/src/assistant.ts.
 
 Podział odpowiedzialności, wynikający wprost z kontraktu ("tekst kroku dosłownie
@@ -23,9 +23,9 @@ import os
 import re
 from typing import Any
 
-from app import graph_n as graph
-from app.core_n import AGENT_MODEL, ChatModel, GenerationOptions
-from app.plan_n import (
+from app import graph as graph
+from app.core import AGENT_MODEL, ChatModel, GenerationOptions
+from app.plan import (
     STEP_CLASS,
     full_plan,
     goal_states,

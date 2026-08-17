@@ -8,9 +8,9 @@ from langchain_core.tools import tool
 from neo4j import Driver, GraphDatabase
 from neo4j.exceptions import ServiceUnavailable, AuthError
 
-from app.builder_n import KnowledgeGraph, GraphClassSchema, RelationSchema, GraphNode, RelationEdge
-from app.core_n import EmbeddingModel, PROJECT_ROOT, GRAPH_DB_URL, GRAPH_DB_PASSWORD, EMBEDDING_MODEL, ChatModel
-from app.schema_n import KB_DATATYPE
+from app.builder import KnowledgeGraph, GraphClassSchema, RelationSchema, GraphNode, RelationEdge
+from app.core import EmbeddingModel, PROJECT_ROOT, GRAPH_DB_URL, GRAPH_DB_PASSWORD, EMBEDDING_MODEL, ChatModel
+from app.schema import KB_DATATYPE
 
 # Bufor budowania grafu w pamięci. Używany przez narzędzia zapisujące
 # (KNOWLEDGE_GRAPH_TOOLS) -- narzędzia czytające z Neo4j go NIE potrzebują.

@@ -1,5 +1,5 @@
 """
-plan_n.py -- warstwa proceduralna grafu: kroki jako osobne węzły, stany jako
+plan.py -- warstwa proceduralna grafu: kroki jako osobne węzły, stany jako
 warunki i efekty, oraz budowanie planu przez trawersję.
 
 Model danych zapisywany do grafu:
@@ -35,8 +35,8 @@ from typing import Any
 
 from neo4j import Driver
 
-from app.builder_n import KnowledgeGraph
-from app.schema_n import Procedure
+from app.builder import KnowledgeGraph
+from app.schema import Procedure
 
 # ======================================================================
 # NAZWY SYSTEMOWE

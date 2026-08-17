@@ -11,7 +11,7 @@ from tqdm import tqdm
 # i 'sync'. Bez tego importu adnotacje nie mają się do czego odwołać i moduł
 # rzuca NameError już przy imporcie -- Python wylicza adnotacje w czasie
 # definiowania klasy, więc nie jest to problem widoczny dopiero przy wywołaniu.
-from app.core_n import EmbeddingModel
+from app.core import EmbeddingModel
 
 class GraphClassSchema(BaseModel):
     """

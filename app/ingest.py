@@ -6,10 +6,10 @@ from typing import Any
 from neo4j import Driver
 from pydantic import ValidationError
 
-from app import graph_n
-from app.core_n import EmbeddingModel, EmbeddingResponse, PROJECT_ROOT, EMBEDDING_MODEL
-from app.graph_n import build_graph_with_llm, save_graph, GRAPHS_DIR
-from app.schema_n import Procedure, Error, Concept, KB_DATATYPE
+from app import graph
+from app.core import EmbeddingModel, EmbeddingResponse, PROJECT_ROOT, EMBEDDING_MODEL
+from app.graph import build_graph_with_llm, save_graph, GRAPHS_DIR
+from app.schema import Procedure, Error, Concept, KB_DATATYPE
 
 KNOWLEDGE_DIR = PROJECT_ROOT / "knowledge"
 CATEGORY: dict[str, type[KB_DATATYPE]] = {
@@ -117,16 +117,16 @@ def ingest_steps(documents: list[KB_DATATYPE]) -> dict[str, Any]:
         trzymał się konwencji nazw węzłów i część procedur nie ma kroków
     """
 
-    from app.plan_n import (register_system_schema, attach_steps_from_documents,
-                            attach_error_links)
+    from app.plan import (register_system_schema, attach_steps_from_documents,
+                          attach_error_links)
 
-    register_message = register_system_schema(graph_n.knowledge_graph)
+    register_message = register_system_schema(graph.knowledge_graph)
 
     for message in register_message:
         if not message.startswith(("OK", "INFO")):
             print(f"UWAGA przy rejestracji schematu: {message}", file=sys.stderr)
 
-    report = attach_steps_from_documents(graph_n.knowledge_graph, documents)
+    report = attach_steps_from_documents(graph.knowledge_graph, documents)
 
     print(f"kroki={report['steps']} współdzielone={report['reused']} "
           f"krawędzie={report['edges']} stany={report['states']} "
@@ -139,7 +139,7 @@ def ingest_steps(documents: list[KB_DATATYPE]) -> dict[str, Any]:
 
     # Powiązania błąd -> procedura naprawcza. Tworzone z 'solutions[].ref',
     # deterministycznie: to po nich autopilot szuka naprawy po napotkaniu błędu.
-    links = attach_error_links(graph_n.knowledge_graph, documents)
+    links = attach_error_links(graph.knowledge_graph, documents)
     print(f"powiązania naprawcze: {links['links']} dla {links['errors']} błędów")
 
     report |= {f"error_{k}": v for k, v in links.items()}
@@ -173,7 +173,7 @@ def ingest_llm(driver: Driver, model:str, embed: EmbeddingModel, dim: int, valid
 
     # Synkujemy i tworzymy embeddingi
     print(f"Ingest LLM: SYNCING")
-    graph_n.knowledge_graph.sync(
+    graph.knowledge_graph.sync(
             driver=driver,
             embed_model=embed,
             # 'dim', nie EMBEDDING_DIM: tym samym wymiarem walidowaliśmy model

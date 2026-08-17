@@ -1,5 +1,5 @@
 """
-api_n.py -- serwer HTTP dla widgetu asystenta w aplikacji ERP.
+api.py -- serwer HTTP dla widgetu asystenta w aplikacji ERP.
 
 Uruchomienie:  uvicorn app.api_n:app --reload --port 8000
 Dokumentacja:  http://localhost:8000/docs
@@ -27,8 +27,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from app import graph_n as graph
-from app.assistant_n import answer, get_index, recovery_plan
+from app import graph as graph
+from app.assistant import answer, get_index, recovery_plan
 
 logger = logging.getLogger("assistant")
 
@@ -41,7 +41,6 @@ CORS_ORIGINS: list[str] = [
 # Ile razy autopilot może poprosić o naprawę TEGO SAMEGO błędu, zanim uznamy,
 # że naprawa go wywołuje ponownie. Bez tego limitu pętla naprawcza jest wieczna.
 MAX_RECOVERIES_PER_CODE: int = int(os.getenv("ASSISTANT_MAX_RECOVERIES", "2"))
-
 
 class AskRequest(BaseModel):
     question: str
