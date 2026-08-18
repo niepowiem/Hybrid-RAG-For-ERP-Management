@@ -47,6 +47,12 @@ export interface ColumnPrefs {
     sort: SortMode;
     collapsed: boolean;
     limit: number;
+    /**
+     * Kiedy ta osoba ostatnio „sprawdziła” kolumnę. Karty, które weszły później,
+     * liczą się do niebieskiego licznika „+N”. Data jest lokalna, bo to pytanie
+     * o MOJĄ nieobecność, a nie o stan wspólny.
+     */
+    checkedAt: string | null;
 }
 
 export interface BoardPrefs {
@@ -56,11 +62,19 @@ export interface BoardPrefs {
     pageSize: number;
 }
 
-export const DEFAULT_COLUMN_PREFS: ColumnPrefs = { sort: "urgency_desc", collapsed: false, limit: 0 };
+export const DEFAULT_COLUMN_PREFS: ColumnPrefs = {
+    sort: "urgency_desc",
+    collapsed: false,
+    limit: 0,
+    checkedAt: null,
+};
 
 const KLUCZ = "crm.board.prefs.v1";
 
-const PUSTE: BoardPrefs = { columns: {}, colorMode: "none", pageSize: 8 };
+const PUSTE: BoardPrefs = { columns: {}, colorMode: "none", pageSize: 5 };
+
+/** Dopuszczalne liczby kafelków w kolumnie. */
+export const ROZMIARY_STRONY = [3, 5, 10, 20] as const;
 
 export function wczytajPrefs(): BoardPrefs {
     try {
@@ -72,7 +86,7 @@ export function wczytajPrefs(): BoardPrefs {
             colorMode: (COLOR_MODES as readonly string[]).includes(p.colorMode ?? "")
                 ? (p.colorMode as ColorMode)
                 : "none",
-            pageSize: typeof p.pageSize === "number" && p.pageSize > 0 ? p.pageSize : 8,
+            pageSize: typeof p.pageSize === "number" && p.pageSize > 0 ? p.pageSize : 5,
         };
     } catch {
         return PUSTE;
