@@ -29,12 +29,14 @@ import type {
     MailCategory,
     UpdateCrmRequestInput,
     CrmStage,
+    DgxStatus,
     LostReason,
 } from "@demo-erp/shared";
 
 export interface MailboxSnapshot {
     state: MailboxState;
     adapter: string;
+    ai: DgxStatus;
     messages: InboxMessage[];
 }
 
@@ -82,6 +84,8 @@ export const crmApi = {
 
     draftFromTemplate: (id: string, key: TemplateKey) =>
         post<{ request: CrmRequest; messageId: string }>(`/api/crm/requests/${id}/messages/draft`, { key }),
+    markMessagesRead: (id: string, messageIds: string[]) =>
+        post<CrmRequest>(`/api/crm/requests/${id}/messages/read`, { messageIds }),
     compose: (id: string, input: ComposeMessageInput) =>
         post<CrmRequest>(`/api/crm/requests/${id}/messages/compose`, input),
 
@@ -100,8 +104,14 @@ export const crmApi = {
     attachmentUrl: (id: string, aid: string) => `/api/crm/requests/${id}/attachments/${aid}`,
     addContact: (clientId: string, input: CreateContactInput) =>
         post<CrmClient>(`/api/crm/clients/${clientId}/contacts`, input),
+    addAssignee: (id: string, employeeId: string) =>
+        post<CrmRequest>(`/api/crm/requests/${id}/assignees`, { employeeId }),
     removeAssignee: (id: string, employeeId: string) =>
         request<CrmRequest>(`/api/crm/requests/${id}/assignees/${employeeId}`, { method: "DELETE" }),
+    addStickyNote: (id: string, text: string) =>
+        post<CrmRequest>(`/api/crm/requests/${id}/sticky-notes`, { text }),
+    removeStickyNote: (id: string, noteId: string) =>
+        request<CrmRequest>(`/api/crm/requests/${id}/sticky-notes/${noteId}`, { method: "DELETE" }),
 
     board: () => request<BoardSnapshot>("/api/crm/board"),
     addColumn: (input: CreateColumnInput) => post<CrmColumn>("/api/crm/board/columns", input),
@@ -156,11 +166,16 @@ export const crmApi = {
 
     generateMissingDataMessage: (id: string) =>
         post<CrmRequest>(`/api/crm/requests/${id}/messages/missing-data`),
-    sendMessage: (id: string, mid: string, patch: { subject: string; body: string }) =>
+    sendMessage: (
+        id: string,
+        mid: string,
+        patch: { to?: string; cc?: string[]; subject: string; body: string },
+    ) =>
         post<CrmRequest>(`/api/crm/requests/${id}/messages/${mid}/send`, patch),
 
     mailbox: () => request<MailboxSnapshot>("/api/crm/mailbox"),
     poll: () => post<PollSnapshot>("/api/crm/mailbox/poll"),
+    mailboxAttachmentUrl: (mid: string, aid: string) => `/api/crm/mailbox/messages/${mid}/attachments/${aid}`,
     setCategory: (mid: string, category: MailCategory) =>
         post<InboxMessage>(`/api/crm/mailbox/messages/${mid}/category`, { category }),
     acceptMessage: (mid: string) =>

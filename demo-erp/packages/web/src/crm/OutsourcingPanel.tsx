@@ -30,6 +30,8 @@ import { ApiError } from "../api.js";
 import { crmApi } from "./client.js";
 import { dataGodzinaPL } from "./format.js";
 import { kwotaPL } from "./BoardCard.js";
+import { PoleZPodswietleniem } from "./MessageEditor.js";
+import { StrefaPlikow } from "./FileZone.js";
 
 const KOLEJNOSC = { quoted: 0, sent: 1, no_reply: 2, declined: 3 } as const;
 
@@ -41,6 +43,29 @@ function sortujOferty(a: VendorInquiry, b: VendorInquiry): number {
     }
     return a.vendorName.localeCompare(b.vendorName);
 }
+
+/** Puchar najtańszej oferty — SVG zamiast emoji, bo emoji renderuje się inaczej
+ *  na każdym systemie i w interfejsie roboczym wygląda przypadkowo. */
+function Puchar({ className = "" }: { className?: string }) {
+    return (
+        <svg className={`os-cup ${className}`} viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+            <path
+                d="M4 2h8v3.2a4 4 0 0 1-8 0V2Z"
+                fill="currentColor"
+            />
+            <path
+                d="M4 3H2.4v1.1A2.5 2.5 0 0 0 4.6 6.6M12 3h1.6v1.1a2.5 2.5 0 0 1-2.2 2.5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.2"
+            />
+            <path d="M8 9.4v2.6M5.6 14h4.8l-.5-2h-3.8l-.5 2Z" fill="none" stroke="currentColor" strokeWidth="1.3" />
+        </svg>
+    );
+}
+
+/** Kolor pozycji — ten sam w liście pozycji, w zakresie firm i w podglądzie. */
+const kolorPozycji = (i: number): string => `p-${i % 6}`;
 
 export function OutsourcingPanel({
                                      req,
@@ -140,10 +165,11 @@ export function OutsourcingPanel({
                                     <span className="os-head-t">
                     <span className="os-title">{item.title}</span>
                     <span className="os-sub">
+                      {item.inquiries.map((q) => q.vendorName).join(", ")}
+                    </span>
+                    <span className="os-sub2">
                       {item.elements.length} {item.elements.length === 1 ? "pozycja" : "pozycji"} ·{" "}
-                        {item.inquiries.length} {item.inquiries.length === 1 ? "firma" : "firm"} ·{" "}
-                        {odpowiedzi} z wyceną
-                        {item.deadline ? ` · termin ${item.deadline}` : ""}
+                        {odpowiedzi} z {item.inquiries.length} odpowiedziało
                     </span>
                   </span>
                                 </button>
@@ -152,10 +178,13 @@ export function OutsourcingPanel({
                                     {najlepsza ? (
                                         <>
                       <span className="os-best-h">
-                        <span aria-hidden="true">🏆</span> Najtańsza
+                        <Puchar /> Najtańsza oferta
                       </span>
                                             <strong>{kwotaPL(najlepsza.quoteValue)}</strong>
                                             <span className="os-best-v">{najlepsza.vendorName}</span>
+                                            {najlepsza.leadTimeDays != null && (
+                                                <span className="os-best-d">termin {najlepsza.leadTimeDays} dni</span>
+                                            )}
                                         </>
                                     ) : (
                                         <span className="os-best-h">Brak wycen</span>
@@ -168,21 +197,27 @@ export function OutsourcingPanel({
                             </header>
 
                             {wybrany && (
-                                <p className="os-winner">
-                                    Wybrany wykonawca: <strong>{wybrany.vendorName}</strong>
-                                    {wybrany.quoteValue != null ? ` · ${kwotaPL(wybrany.quoteValue)}` : ""}
-                                    <button type="button" onClick={() => void wybierz(item, null)}>
-                                        zmień
+                                <div className="os-winner">
+                  <span className="os-winner-ico" aria-hidden="true">
+                    ✓
+                  </span>
+                                    <span className="os-winner-t">
+                    Wykonawca: <strong>{wybrany.vendorName}</strong>
+                                        {wybrany.quoteValue != null ? ` · ${kwotaPL(wybrany.quoteValue)}` : ""}
+                                        {wybrany.leadTimeDays != null ? ` · ${wybrany.leadTimeDays} dni` : ""}
+                  </span>
+                                    <button type="button" className="os-winner-act" onClick={() => void wybierz(item, null)}>
+                                        Zmień
                                     </button>
-                                </p>
+                                </div>
                             )}
 
                             {otwarte && (
                                 <>
                                     <ul className="os-elements">
                                         {item.elements.map((e, i) => (
-                                            <li key={e.id}>
-                                                <span className="os-el-n">{i + 1}.</span>
+                                            <li key={e.id} className={kolorPozycji(i)}>
+                                                <span className="os-el-n">{i + 1}</span>
                                                 <span className="os-el-t">
                           {e.title}
                                                     {e.quantity ? ` — ${e.quantity}` : ""}
@@ -199,6 +234,7 @@ export function OutsourcingPanel({
                                                 item={item}
                                                 zap={q}
                                                 rank={q.status === "quoted" ? i + 1 : null}
+                                                kolory={item.elements.map((_, n) => kolorPozycji(n))}
                                                 wybrany={item.selectedVendorId === q.vendorId}
                                                 onPodglad={() => setPodglad({ item, zap: q })}
                                                 onWycena={() => setWycena({ item, zap: q })}
@@ -249,6 +285,7 @@ function WierszOferty({
                           item,
                           zap,
                           rank,
+                          kolory,
                           wybrany,
                           onPodglad,
                           onWycena,
@@ -258,6 +295,7 @@ function WierszOferty({
     item: OutsourcingItem;
     zap: VendorInquiry;
     rank: number | null;
+    kolory: string[];
     wybrany: boolean;
     onPodglad: () => void;
     onWycena: () => void;
@@ -271,7 +309,7 @@ function WierszOferty({
     return (
         <li className={`os-row-wrap ${zap.status}${wybrany ? " wybrany" : ""}`}>
             <div className="os-row">
-                <span className="os-rank">{rank === 1 ? "🏆" : (rank ?? "—")}</span>
+                <span className="os-rank">{rank === 1 ? <Puchar className="maly" /> : (rank ?? "—")}</span>
                 <button
                     type="button"
                     className="os-vendor"
@@ -308,9 +346,16 @@ function WierszOferty({
             </div>
 
             <p className="os-scope">
-                Zakres: {zakres.map((e) => e.title).join(", ") || "—"}
-                {zakres.length < item.elements.length && (
-                    <span className="os-scope-x"> (bez {item.elements.length - zakres.length} pozycji)</span>
+                {item.elements.map((e, i) =>
+                        zap.elementIds.includes(e.id) ? (
+                            <span key={e.id} className={`os-chip ${kolory[i]}`}>
+              {e.title}
+            </span>
+                        ) : (
+                            <span key={e.id} className="os-chip poza" title="Ta pozycja nie została wysłana tej firmie">
+              {e.title}
+            </span>
+                        ),
                 )}
             </p>
 
@@ -394,10 +439,9 @@ interface Pozycja {
     title: string;
     description: string;
     quantity: string;
-    preset: string;
 }
 
-const PUSTA: Pozycja = { title: "", description: "", quantity: "", preset: "" };
+const PUSTA: Pozycja = { title: "", description: "", quantity: "" };
 
 function FormularzZapytania({
                                 req,
@@ -410,8 +454,6 @@ function FormularzZapytania({
     onCancel: () => void;
     onSaved: (r: CrmRequest) => void;
 }) {
-    const [title, setTitle] = useState(`Zapytanie kooperacyjne — ${req.projectName}`);
-    const [deadline, setDeadline] = useState(req.deadline ?? "");
     const [pozycje, setPozycje] = useState<Pozycja[]>([{ ...PUSTA }]);
     const [wybrane, setWybrane] = useState<Record<string, number[]>>({});
     const [zalaczniki, setZalaczniki] = useState<{ name: string; sizeKb: number }[]>([]);
@@ -434,26 +476,20 @@ function FormularzZapytania({
     const [busy, setBusy] = useState(false);
     const [bledy, setBledy] = useState<Record<string, string>>({});
 
-    /** Podpowiedzi do pola nazwy — jedno pole, nie osobny input i osobna lista. */
-    const presety = OUTSOURCING_PRESETS;
-
     function ustawPozycje(i: number, patch: Partial<Pozycja>): void {
         setPozycje((p) => p.map((x, n) => (n === i ? { ...x, ...patch } : x)));
     }
 
     /**
-     * Wpisanie albo wybranie nazwy z listy. Jedno pole obsługuje oba przypadki
-     * (`<input list=…>`): gdy tekst pokrywa się z gotowym zestawem, dociągamy
-     * opis i podpowiadamy firmy o pasującej specjalności.
+     * Jedno pole na nazwę: wpisz własną albo wybierz z listy. Gdy tekst pokrywa
+     * się z gotowym zestawem, dociągamy opis i podpowiadamy firmy o pasującej
+     * specjalności.
      */
     function nazwaPozycji(i: number, wartosc: string): void {
-        const preset = presety.find((p) => p.title.toLowerCase() === wartosc.trim().toLowerCase());
+        const preset = OUTSOURCING_PRESETS.find((p) => p.title.toLowerCase() === wartosc.trim().toLowerCase());
         ustawPozycje(i, {
             title: wartosc,
-            preset: preset?.id ?? "",
-            ...(preset && pozycje[i]?.description.trim() === ""
-                ? { description: preset.description }
-                : {}),
+            ...(preset && pozycje[i]?.description.trim() === "" ? { description: preset.description } : {}),
         });
         if (!preset) return;
         const pasujace = vendors.filter((v) =>
@@ -490,16 +526,32 @@ function FormularzZapytania({
 
     const wybraneFirmy = Object.entries(wybrane);
 
-    const podglad = useMemo(() => {
+    /** Lista pozycji wstawiana w miejsce znacznika — i podstawienia do podświetleń. */
+    const { listaPozycji, podstawienia } = useMemo(() => {
         const lista = pozycje
-            .map((p, i) => `${i + 1}. ${p.title || "(bez nazwy)"}${p.quantity ? ` — ${p.quantity}` : ""}\n   ${p.description}`)
+            .map(
+                (p, i) =>
+                    `${i + 1}. ${p.title || "(bez nazwy)"}${p.quantity ? ` — ${p.quantity}` : ""}\n   ${p.description}`,
+            )
             .join("\n");
-        return body.includes("{{elementy}}") ? body.replace("{{elementy}}", lista) : `${body}\n\n${lista}`;
-    }, [body, pozycje]);
+        return {
+            listaPozycji: lista,
+            podstawienia: pozycje
+                .filter((p) => p.title.trim() !== "")
+                .map((p) => ({
+                    token: "element.nazwa",
+                    value: p.title,
+                    category: "produkt" as const,
+                })),
+        };
+    }, [pozycje]);
+
+    const podglad = body.includes("{{elementy}}")
+        ? body.replace("{{elementy}}", listaPozycji)
+        : `${body}\n\n${listaPozycji}`;
 
     function sprawdz(): boolean {
         const b: Record<string, string> = {};
-        if (title.trim().length < 3) b.title = "Podaj nazwę zapytania (min. 3 znaki).";
         if (subject.trim().length < 3) b.subject = "Temat nie może być pusty.";
         if (body.trim().length < 10) b.body = "Treść wiadomości jest za krótka.";
         pozycje.forEach((p, i) => {
@@ -520,8 +572,7 @@ function FormularzZapytania({
         try {
             onSaved(
                 await crmApi.addOutsourcing(req.id, {
-                    title,
-                    deadline,
+                    title: "",
                     subject,
                     body,
                     elements: pozycje.map((p) => ({
@@ -542,187 +593,157 @@ function FormularzZapytania({
     }
 
     return (
-        <div className="dr-card os-form">
-            <div className="dr-two">
-                <label className="dr-field">
-                    <span>Nazwa zapytania</span>
-                    <input
-                        value={title}
-                        className={bledy.title ? "invalid" : ""}
-                        onChange={(e) => setTitle(e.target.value)}
-                        data-assistant-id="crm-os-title"
-                    />
-                    {bledy.title && <span className="field-error">{bledy.title}</span>}
-                </label>
-                <label className="dr-field">
-                    <span>Oczekiwany termin</span>
-                    <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
-                </label>
-            </div>
-
-            <p className="os-pick-h">Pozycje do wyceny ({pozycje.length})</p>
-            <datalist id="os-presety">
-                {presety.map((p) => (
-                    <option key={p.id} value={p.title} />
-                ))}
-            </datalist>
-
-            {pozycje.map((p, i) => (
-                <div className="os-poz" key={i}>
-                    <div className="os-poz-h">
-                        <span className="os-poz-n">{i + 1}</span>
-                        <input
-                            list="os-presety"
-                            value={p.title}
-                            placeholder="Wpisz nazwę albo wybierz z listy (np. Gięcie blach)"
-                            className={bledy[`poz-${i}`] ? "invalid" : ""}
-                            onChange={(e) => nazwaPozycji(i, e.target.value)}
-                            data-assistant-id={`crm-os-poz-${i}`}
-                        />
-                        <input
-                            className="os-poz-q"
-                            value={p.quantity}
-                            placeholder="Ilość"
-                            onChange={(e) => ustawPozycje(i, { quantity: e.target.value })}
-                        />
-                        {pozycje.length > 1 && (
-                            <button
-                                type="button"
-                                className="os-x"
-                                title="Usuń pozycję"
-                                onClick={() => {
-                                    setPozycje((prev) => prev.filter((_, n) => n !== i));
-                                    setWybrane((prev) =>
-                                        Object.fromEntries(
-                                            Object.entries(prev).map(([v, zakres]) => [
-                                                v,
-                                                zakres.filter((x) => x !== i).map((x) => (x > i ? x - 1 : x)),
-                                            ]),
-                                        ),
-                                    );
-                                }}
-                            >
-                                ✕
-                            </button>
-                        )}
-                    </div>
-                    <textarea
-                        rows={2}
-                        value={p.description}
-                        placeholder="Co dokładnie ma zostać wykonane: materiał, tolerancje, wykończenie."
-                        onChange={(e) => ustawPozycje(i, { description: e.target.value })}
-                    />
-                    {bledy[`poz-${i}`] && <span className="field-error">{bledy[`poz-${i}`]}</span>}
-                </div>
-            ))}
-
-            <button type="button" className="os-add-poz" onClick={() => setPozycje((p) => [...p, { ...PUSTA }])}>
-                + Dodaj pozycję
-            </button>
-
-            <p className="os-pick-h">
-                Firmy i zakres zapytania ({wybraneFirmy.length})
-                {bledy.vendors && <span className="field-error"> {bledy.vendors}</span>}
-            </p>
-            <p className="dr-meta">
-                Zaznacz firmy, a przy każdej odznacz pozycje, których nie chcesz jej wysyłać. Firmy nie
-                widzą siebie nawzajem ani zakresu wysłanego pozostałym.
-            </p>
-
-            <ul className="os-pick">
-                {vendors.map((v) => {
-                    const zaznaczona = wybrane[v.id] != null;
-                    return (
-                        <li key={v.id} className={zaznaczona ? "on" : ""}>
-                            <label className="os-pick-main">
-                                <input type="checkbox" checked={zaznaczona} onChange={() => przelaczFirme(v.id)} />
-                                <span className="os-pick-n">{v.name}</span>
-                                <span className="os-pick-s">{v.specialties.join(", ")}</span>
-                            </label>
-                            {zaznaczona && (
-                                <div className="os-pick-scope">
-                                    {pozycje.map((p, i) => (
-                                        <label key={i} className={(wybrane[v.id] ?? []).includes(i) ? "on" : ""}>
-                                            <input
-                                                type="checkbox"
-                                                checked={(wybrane[v.id] ?? []).includes(i)}
-                                                onChange={() => przelaczZakres(v.id, i)}
-                                            />
-                                            {i + 1}. {p.title || "(bez nazwy)"}
-                                        </label>
-                                    ))}
-                                </div>
-                            )}
-                        </li>
-                    );
-                })}
-            </ul>
-
-            <p className="os-pick-h">Wiadomość</p>
-            <label className="dr-field">
-                <span>Temat</span>
-                <input
-                    value={subject}
-                    className={bledy.subject ? "invalid" : ""}
-                    onChange={(e) => setSubject(e.target.value)}
-                />
-                {bledy.subject && <span className="field-error">{bledy.subject}</span>}
-            </label>
-            <label className="dr-field">
-                <span>Treść</span>
-                <textarea
-                    rows={9}
-                    value={body}
-                    className={bledy.body ? "invalid" : ""}
-                    onChange={(e) => setBody(e.target.value)}
-                />
-                {bledy.body && <span className="field-error">{bledy.body}</span>}
-                <span className="dr-meta">
-          Znacznik <code>{"{{elementy}}"}</code> zostanie zastąpiony listą pozycji — osobno dla
-          każdej firmy, zgodnie z jej zakresem. Jeśli go usuniesz, lista dopisze się na końcu.
-        </span>
-            </label>
-
-            <label className="dr-field">
-                <span>Załączniki do zapytania</span>
-                <input
-                    type="file"
-                    multiple
-                    onChange={(e) => {
-                        const pliki = Array.from(e.target.files ?? []).map((f) => ({
-                            name: f.name,
-                            sizeKb: Math.max(1, Math.round(f.size / 1024)),
-                        }));
-                        setZalaczniki((prev) => [...prev, ...pliki]);
-                    }}
-                    data-assistant-id="crm-os-files"
-                />
-                <span className="dr-meta">
-          Wersja demonstracyjna zapisuje nazwę i rozmiar pliku, nie jego treść.
-        </span>
-            </label>
-            {zalaczniki.length > 0 && (
-                <ul className="os-files">
-                    {zalaczniki.map((a, i) => (
-                        <li key={`${a.name}-${i}`}>
-                            <span>▤ {a.name}</span>
-                            <span>
-                {a.sizeKb} kB
-                <button
-                    type="button"
-                    className="os-x"
-                    onClick={() => setZalaczniki((prev) => prev.filter((_, n) => n !== i))}
-                >
-                  ✕
-                </button>
-              </span>
-                        </li>
+        <div className="os-form">
+            {/* --- pozycje --- */}
+            <section className="os-sec">
+                <h5 className="os-sec-h">
+                    Pozycje do wyceny <span className="os-sec-n">{pozycje.length}</span>
+                </h5>
+                <datalist id="os-presety">
+                    {OUTSOURCING_PRESETS.map((p) => (
+                        <option key={p.id} value={p.title} />
                     ))}
-                </ul>
-            )}
+                </datalist>
 
-            <p className="os-pick-h">Podgląd wiadomości</p>
-            <pre className="os-prev-body">{podglad}</pre>
+                {pozycje.map((p, i) => (
+                    <div className={`os-poz ${kolorPozycji(i)}`} key={i}>
+                        <div className="os-poz-h">
+                            <span className="os-poz-n">{i + 1}</span>
+                            <input
+                                list="os-presety"
+                                value={p.title}
+                                placeholder="Wpisz nazwę albo wybierz z listy (np. Gięcie blach)"
+                                className={bledy[`poz-${i}`] ? "invalid" : ""}
+                                onChange={(e) => nazwaPozycji(i, e.target.value)}
+                                data-assistant-id={`crm-os-poz-${i}`}
+                            />
+                            <input
+                                className="os-poz-q"
+                                value={p.quantity}
+                                placeholder="Ilość"
+                                onChange={(e) => ustawPozycje(i, { quantity: e.target.value })}
+                            />
+                            {pozycje.length > 1 && (
+                                <button
+                                    type="button"
+                                    className="os-x"
+                                    title="Usuń pozycję"
+                                    onClick={() => {
+                                        setPozycje((prev) => prev.filter((_, n) => n !== i));
+                                        setWybrane((prev) =>
+                                            Object.fromEntries(
+                                                Object.entries(prev).map(([v, zakres]) => [
+                                                    v,
+                                                    zakres.filter((x) => x !== i).map((x) => (x > i ? x - 1 : x)),
+                                                ]),
+                                            ),
+                                        );
+                                    }}
+                                >
+                                    ✕
+                                </button>
+                            )}
+                        </div>
+                        <textarea
+                            rows={2}
+                            value={p.description}
+                            placeholder="Materiał, tolerancje, wykończenie."
+                            onChange={(e) => ustawPozycje(i, { description: e.target.value })}
+                        />
+                        {bledy[`poz-${i}`] && <span className="field-error">{bledy[`poz-${i}`]}</span>}
+                    </div>
+                ))}
+
+                <button type="button" className="os-add-poz" onClick={() => setPozycje((p) => [...p, { ...PUSTA }])}>
+                    + Dodaj pozycję
+                </button>
+            </section>
+
+            {/* --- firmy i zakres --- */}
+            <section className="os-sec">
+                <h5 className="os-sec-h">
+                    Firmy i zakres zapytania <span className="os-sec-n">{wybraneFirmy.length}</span>
+                    {bledy.vendors && <span className="field-error"> {bledy.vendors}</span>}
+                </h5>
+                <p className="dr-meta">
+                    Przy każdej firmie odznacz pozycje, których nie chcesz jej wysyłać. Firmy nie widzą
+                    siebie nawzajem ani zakresu wysłanego pozostałym.
+                </p>
+
+                <ul className="os-pick">
+                    {vendors.map((v) => {
+                        const zaznaczona = wybrane[v.id] != null;
+                        return (
+                            <li key={v.id} className={zaznaczona ? "on" : ""}>
+                                <label className="os-pick-main">
+                                    <input type="checkbox" checked={zaznaczona} onChange={() => przelaczFirme(v.id)} />
+                                    <span className="os-pick-n">{v.name}</span>
+                                    <span className="os-pick-s">{v.specialties.join(", ")}</span>
+                                </label>
+                                {zaznaczona && (
+                                    <div className="os-pick-scope">
+                                        {pozycje.map((p, i) => {
+                                            const ma = (wybrane[v.id] ?? []).includes(i);
+                                            return (
+                                                <button
+                                                    key={i}
+                                                    type="button"
+                                                    className={`os-chip ${ma ? kolorPozycji(i) : "poza"}`}
+                                                    onClick={() => przelaczZakres(v.id, i)}
+                                                    title={ma ? "Kliknij, aby wyłączyć tę pozycję dla tej firmy" : "Kliknij, aby dołączyć"}
+                                                >
+                                                    {ma ? "✓ " : "＋ "}
+                                                    {p.title || `pozycja ${i + 1}`}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </li>
+                        );
+                    })}
+                </ul>
+            </section>
+
+            {/* --- wiadomość --- */}
+            <section className="os-sec os-sec-msg">
+                <h5 className="os-sec-h">Wiadomość do firm</h5>
+                <label className="dr-field">
+                    <span>Temat</span>
+                    <input
+                        value={subject}
+                        className={bledy.subject ? "invalid" : ""}
+                        onChange={(e) => setSubject(e.target.value)}
+                    />
+                    {bledy.subject && <span className="field-error">{bledy.subject}</span>}
+                </label>
+
+                <div className="dr-field">
+                    <span>Treść — pozycje podświetlone kolorami wstawi system</span>
+                    <PoleZPodswietleniem
+                        value={body}
+                        onChange={setBody}
+                        podstawienia={podstawienia}
+                        rows={10}
+                        id="crm-os-body"
+                    />
+                    {bledy.body && <span className="field-error">{bledy.body}</span>}
+                </div>
+                <p className="dr-meta">
+                    Znacznik <code>{"{{elementy}}"}</code> zostanie zastąpiony listą pozycji — osobno dla
+                    każdej firmy, zgodnie z jej zakresem.
+                </p>
+
+                <div className="dr-field">
+                    <span>Załączniki</span>
+                    <StrefaPlikow pliki={zalaczniki} onChange={setZalaczniki} />
+                </div>
+
+                <details className="os-prev-det">
+                    <summary>Podgląd pełnej wiadomości</summary>
+                    <pre className="os-prev-body">{podglad}</pre>
+                </details>
+            </section>
 
             {bledy.ogolny && <p className="crm-note danger">{bledy.ogolny}</p>}
             <div className="os-form-act">

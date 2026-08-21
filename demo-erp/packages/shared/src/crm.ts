@@ -184,6 +184,47 @@ export const MAIL_CATEGORY_LABELS: Record<MailCategory, string> = {
   other: "Pozostała wiadomość",
 };
 
+export const MAIL_CLASSIFICATION_SOURCES = ["dgx", "heuristic"] as const;
+export type MailClassificationSource = (typeof MAIL_CLASSIFICATION_SOURCES)[number];
+
+/** Metadane decyzji klasyfikatora, bez treści wiadomości i danych osobowych. */
+export const MailClassificationSchema = z.object({
+  source: z.enum(MAIL_CLASSIFICATION_SOURCES),
+  confidence: z.number().min(0).max(1),
+  threshold: z.number().min(0).max(1).nullable(),
+  /** Nazwa klasyfikatora zapisana razem z wynikiem. */
+  modelName: z.string().nullable().optional(),
+  modelVersion: z.string().nullable(),
+  latencyMs: z.number().nonnegative(),
+  usedFallback: z.boolean(),
+  /** Powód przejścia do bezpiecznej, ręcznej weryfikacji. */
+  fallbackReason: z.string().nullable().optional(),
+});
+export type MailClassification = z.infer<typeof MailClassificationSchema>;
+
+export type DgxConnectionState = "connected" | "degraded" | "incompatible" | "offline" | "not_configured";
+export type DgxServiceState = "online" | "incompatible" | "offline" | "not_configured";
+
+export interface DgxServiceStatus {
+  state: DgxServiceState;
+  label: string;
+  modelName: string | null;
+  modelVersion: string | null;
+  embeddingDimension: number | null;
+  normalizeEmbeddings: boolean | null;
+  preprocessingVersion: number | null;
+  latencyMs: number | null;
+  lastError: string | null;
+}
+
+/** Stan usług AI na DGX Spark, pokazywany stale w skrzynce CRM. */
+export interface DgxStatus {
+  state: DgxConnectionState;
+  checkedAt: string;
+  classifier: DgxServiceStatus;
+  extractor: DgxServiceStatus;
+}
+
 export const MAIL_STATUSES = [
   "new",
   "processing",
@@ -336,6 +377,12 @@ export const CrmMessageSchema = z.object({
   authorName: z.string().default("Dział Handlowy"),
   /** Osoba kontaktowa klienta, jeśli wiadomość da się z nią powiązać. */
   contactId: z.string().nullable().default(null),
+  /** Pracownik, który napisał — decyduje o kolorze wpisu i widoczności szkicu. */
+  authorId: z.string().nullable().default(null),
+  /** Dodatkowi adresaci (DW) — np. przedstawiciel klienta na budowie. */
+  cc: z.array(z.string()).default([]),
+  /** Kto już przeczytał — wiadomość „nowa” to taka, której nie ma tu mojego id. */
+  readBy: z.array(z.string()).default([]),
   to: z.string(),
   subject: z.string(),
   body: z.string(),
@@ -434,6 +481,27 @@ export const StageNoteSchema = z.object({
   user: z.string(),
 });
 export type StageNote = z.infer<typeof StageNoteSchema>;
+
+export const STICKY_NOTE_COLORS = [
+  "yellow",
+  "pink",
+  "blue",
+  "green",
+  "purple",
+  "orange",
+  "mint",
+  "cyan",
+  "coral",
+] as const;
+export const StickyNoteSchema = z.object({
+  id: z.string(),
+  text: z.string(),
+  authorId: z.string().nullable(),
+  authorName: z.string(),
+  createdAt: z.string(),
+  color: z.enum(STICKY_NOTE_COLORS),
+});
+export type StickyNote = z.infer<typeof StickyNoteSchema>;
 
 // ------------------------------ outsourcing -------------------------------
 
@@ -546,6 +614,7 @@ export const CrmRequestSchema = z.object({
   /** Kiedy ktoś pierwszy raz otworzył zapytanie — do wygaszania pulsowania. */
   seenAt: z.string().nullable(),
   stageNotes: z.array(StageNoteSchema),
+  stickyNotes: z.array(StickyNoteSchema).default([]),
   outsourcing: z.array(OutsourcingItemSchema).default([]),
   notes: z.string(),
   companyName: z.string(),
@@ -611,6 +680,8 @@ export const InboxMessageSchema = z.object({
   attachments: z.array(CrmAttachmentSchema),
   status: z.enum(MAIL_STATUSES),
   category: z.enum(MAIL_CATEGORIES),
+  /** Wynik pierwszego etapu AI; brak dla starszych danych demonstracyjnych. */
+  classification: MailClassificationSchema.nullable().optional(),
   /** true, gdy kategorię nadpisał człowiek — klasyfikator już jej nie zmienia. */
   categoryManual: z.boolean(),
   extracted: ExtractedDataSchema.nullable(),
@@ -925,6 +996,8 @@ export interface CrmIssue {
   message: string;
   action: IssueAction | null;
   actionLabel: string | null;
+  /** Wysłaliśmy prośbę i brak nadal istnieje — teraz czekamy na klienta. */
+  waitingSince?: string | null;
 }
 
 /**
@@ -948,6 +1021,7 @@ export function wykryjProblemy(
       quantity: string | null;
       requiredAttachments: AttachmentKind[];
       attachments: { kind: AttachmentKind }[];
+      messages: { templateKey: TemplateKey | null; sentAt: string | null }[];
       followUps: CrmFollowUp[];
     },
     dzisiaj = dzisiajISO(),
@@ -1000,14 +1074,24 @@ export function wykryjProblemy(
       (k) => !req.attachments.some((a) => a.kind === k),
   );
   if (wlaczona("attachments") && brakZal.length > 0) {
+    const ostatniaProsba = req.messages
+        .filter((m) => m.templateKey === "attachments" && m.sentAt != null)
+        .sort((a, b) => (a.sentAt ?? "").localeCompare(b.sentAt ?? ""))
+        .at(-1);
+    const czekamy = ostatniaProsba?.sentAt != null;
     out.push({
       id: "attachments",
       severity: "warn",
       stage: "offer_prep",
-      title: brakZal.length === 1 ? "Brak pliku" : `Brak ${brakZal.length} plików`,
-      message: `Brakuje załączników: ${brakZal.map((k) => ATTACHMENT_KIND_LABELS[k]).join(", ")}.`,
+      title: czekamy
+          ? "Czekamy na pliki od klienta"
+          : brakZal.length === 1 ? "Brak pliku" : `Brak ${brakZal.length} plików`,
+      message: czekamy
+          ? `Brakuje załączników: ${brakZal.map((k) => ATTACHMENT_KIND_LABELS[k]).join(", ")}. Prośba została wysłana; czekamy na odpowiedź klienta.`
+          : `Brakuje załączników: ${brakZal.map((k) => ATTACHMENT_KIND_LABELS[k]).join(", ")}.`,
       action: "email_attachments",
-      actionLabel: "Poproś o pliki",
+      actionLabel: czekamy ? "Poproś ponownie o pliki" : "Poproś o pliki",
+      waitingSince: ostatniaProsba?.sentAt ?? null,
     });
   }
 
@@ -1102,8 +1186,9 @@ export function pulsKafelka(
 // ---------------------- schematy formularzy tablicy ------------------------
 
 export const CreateOutsourcingSchema = z.object({
-  title: z.string().trim().min(3, "Podaj nazwę zapytania"),
-  deadline: z.preprocess(pusteNaNull, z.string().nullable()),
+  /** Pusta nazwa = zbudowana z pozycji po stronie serwera. */
+  title: z.string().trim().default(""),
+  deadline: z.preprocess(pusteNaNull, z.string().nullable()).optional(),
   subject: z.string().trim().min(3, "Temat wiadomości nie może być pusty"),
   body: z.string().trim().min(10, "Treść wiadomości jest za krótka"),
   elements: z
@@ -1111,7 +1196,9 @@ export const CreateOutsourcingSchema = z.object({
           z.object({
             title: z.string().trim().min(2, "Nazwa elementu jest za krótka"),
             description: z.string().trim().min(3, "Opisz krótko, co ma być wycenione"),
-            quantity: z.preprocess(pusteNaNull, z.string().nullable()),
+            // Ilość bywa nieznana na etapie zapytania — wtedy pytamy o cenę
+            // jednostkową, a nie blokujemy wysyłki.
+            quantity: z.preprocess(pusteNaNull, z.string().nullable()).optional().default(null),
           }),
       )
       .min(1, "Dodaj co najmniej jeden element do wyceny"),
@@ -1496,6 +1583,8 @@ export const CrmSettingsSchema = z.object({
     address: z.string(),
   }),
   automation: z.object({
+    /** Automatyczny klasyfikator lub bezpieczne kierowanie każdej wiadomości do operatora. */
+    mailClassificationMode: z.enum(["automatic", "manual"]),
     /** Potwierdzenie przyjęcia wychodzi samo po rozpoznaniu zapytania. */
     acknowledgeNewRequests: z.boolean(),
     /** Po ilu dniach w „Wysłanych” karta idzie do follow-upu. */
@@ -1517,8 +1606,12 @@ export type UpdateSettingsInput = z.infer<typeof UpdateSettingsSchema>;
 
 export const ComposeMessageSchema = z.object({
   to: z.string().min(3, "Podaj adresata"),
+  cc: z.array(z.string()).default([]),
+  attachments: z
+      .array(z.object({ name: z.string(), sizeKb: z.number().nonnegative() }))
+      .default([]),
   subject: z.string().min(3, "Temat nie może być pusty"),
-  body: z.string().min(5, "Treść nie może być pusta"),
+  body: z.string().trim().min(1, "Treść nie może być pusta"),
   kind: z.enum(CRM_MESSAGE_KINDS).default("custom"),
   /** Klucz szablonu, jeśli wiadomość powstała z szybkiej akcji. */
   templateKey: z.enum(TEMPLATE_KEYS).nullable().default(null),
@@ -1575,4 +1668,50 @@ export const OUTSOURCING_PRESETS = [
 /** Ile pełnych dni minęło od podanej chwili (ISO). */
 export function dniOdISO(iso: string): number {
   return Math.floor((Date.now() - Date.parse(iso)) / 86_400_000);
+}
+
+
+// ------------------------- korespondencja: role autorów ---------------------
+
+/**
+ * Kto napisał wiadomość — z punktu widzenia osoby, która na nią patrzy.
+ * Kolor wpisu w wątku bierze się właśnie stąd: własna korespondencja, pismo
+ * kolegi i pismo kierownika mają w pracy inną wagę i inaczej się je czyta.
+ */
+export type AutorWiadomosci = "klient" | "ja" | "kierownik" | "wspolpracownik" | "system";
+
+export function autorWiadomosci(
+    msg: { direction: "in" | "out"; authorId: string | null },
+    jaId: string | null,
+    pracownicy: { id: string; role: CrmEmployeeRole }[],
+): AutorWiadomosci {
+  if (msg.direction === "in") return "klient";
+  if (!msg.authorId) return "system";
+  if (msg.authorId === jaId) return "ja";
+  const p = pracownicy.find((x) => x.id === msg.authorId);
+  if (p?.role === "kierownik" || p?.role === "administrator") return "kierownik";
+  return "wspolpracownik";
+}
+
+/**
+ * Czy wiadomość ma być widoczna dla tej osoby. Szkic jest prywatny: nikt nie
+ * chce, żeby kolega zobaczył nieskończone zdanie, które akurat przemyśliwa.
+ */
+export function widocznaDla(
+    msg: { sentAt: string | null; authorId: string | null },
+    jaId: string | null,
+): boolean {
+  if (msg.sentAt) return true;
+  return msg.authorId != null && msg.authorId === jaId;
+}
+
+/** Nieprzeczytane wiadomości w sprawie — bez szkiców i bez własnych pism. */
+export function nieprzeczytane<T extends { sentAt: string | null; authorId: string | null; readBy: string[]; direction: "in" | "out" }>(
+    messages: T[],
+    jaId: string | null,
+): T[] {
+  if (!jaId) return [];
+  return messages.filter(
+      (m) => m.sentAt != null && m.authorId !== jaId && !m.readBy.includes(jaId),
+  );
 }

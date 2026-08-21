@@ -18,6 +18,8 @@
 
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import {
+    autorWiadomosci,
+    nieprzeczytane,
     CRM_PIPELINE,
     CRM_STAGE_LABELS,
     CRM_STAGE_MICRO,
@@ -29,6 +31,7 @@ import {
 import type { CrmEmployee, CrmIssue, CrmRequest } from "@demo-erp/shared";
 import type { ColorMode } from "./boardPrefs.js";
 import { czasWzgledny, dataPL } from "./format.js";
+import { getUserId } from "../api.js";
 
 export const kwotaPL = (v: number | null): string =>
     v == null
@@ -104,8 +107,9 @@ function IssuePopover({ issues, anchor }: { issues: CrmIssue[]; anchor: DOMRect 
             </p>
             <ul>
                 {issues.map((i) => (
-                    <li key={i.id} className={i.severity}>
+                    <li key={i.id} className={`${i.severity}${i.waitingSince ? " waiting" : ""}`}>
                         <strong>{i.title}.</strong> {i.message}
+                        {i.waitingSince && <small>Prośbę wysłano {czasWzgledny(i.waitingSince)}.</small>}
                     </li>
                 ))}
             </ul>
@@ -169,6 +173,41 @@ function klasaKoloru(req: CrmRequest, mode: ColorMode, employees: CrmEmployee[])
     }
 }
 
+/**
+ * Ikona nowej korespondencji. Kolor mówi, od kogo przyszła, bo to zmienia
+ * pilność: pismo klienta wymaga odpowiedzi, pismo kierownika trzeba przeczytać,
+ * a notatka kolegi zwykle tylko odnotować.
+ */
+function IkonaPoczty({ rodzaj }: { rodzaj: "klient" | "kierownik" | "wspolpracownik" }) {
+    const tytul =
+        rodzaj === "klient"
+            ? "Nowa wiadomość od klienta"
+            : rodzaj === "kierownik"
+                ? "Nowa wiadomość od kierownika lub project managera"
+                : "Nowa wiadomość od innego kosztorysanta";
+    return (
+        <span className={`bc-mail ${rodzaj}`} title={tytul} aria-label={tytul}>
+      <svg viewBox="0 0 16 12" aria-hidden="true" focusable="false">
+        <rect x="1" y="1" width="14" height="10" rx="1.6" fill="none" stroke="currentColor" strokeWidth="1.6" />
+        <path d="M1.5 1.7 8 6.5l6.5-4.8" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      </svg>
+    </span>
+    );
+}
+
+/** Zegar dla zapytania, które zbyt długo czeka bez przypisania. */
+function IkonaOczekiwania({ dni }: { dni: number }) {
+    const tytul = `Zapytanie czeka w kolumnie Nowe już ${dni} dni`;
+    return (
+        <span className="bc-age" title={tytul} aria-label={tytul}>
+          <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+            <circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+            <path d="M8 4.6v3.7l2.5 1.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        </span>
+    );
+}
+
 export interface BoardCardProps {
     req: CrmRequest;
     /** Wszyscy kosztorysanci sprawy, w kolejności wejścia. */
@@ -195,9 +234,30 @@ export function BoardCard({
                               onDragEnd,
                               dragging,
                           }: BoardCardProps) {
+    const jaId = getUserId();
     const issues = wykryjProblemy(req, undefined, wylaczoneReguly);
     const puls = pulsKafelka(req);
     const pil = pilnosc(req);
+    const wejscieDoNowych = Date.parse(req.columnEnteredAt || req.createdAt);
+    const dniWNowych = req.columnId === "col-new" && Number.isFinite(wejscieDoNowych)
+        ? Math.floor((Date.now() - wejscieDoNowych) / 86_400_000)
+        : 0;
+    const zalegleNowe = dniWNowych > 14;
+    /**
+     * Najnowsza nieprzeczytana wiadomość decyduje o ikonie. Sama ikona wystarczy —
+     * kafelek z nową pocztą już nie pulsuje, bo migotanie zarezerwowane jest dla
+     * terminów i nowych zapytań; trzeci powód do migania odbierał znaczenie
+     * dwóm pierwszym.
+     */
+    const nowe = nieprzeczytane(req.messages, jaId);
+    const ostatniaNowa = nowe.at(-1);
+    const nowaPoczta: "klient" | "kierownik" | "wspolpracownik" | null = ostatniaNowa
+        ? (() => {
+            const a = autorWiadomosci(ostatniaNowa, jaId, employees);
+            return a === "klient" || a === "kierownik" || a === "wspolpracownik" ? a : null;
+        })()
+        : null;
+
     const glowny = issues[0];
     // Czy o to samo już prosiliśmy? Przycisk ma o tym mówić, ale nie blokować —
     // ponowienie bywa właśnie tym, co trzeba zrobić.
@@ -213,7 +273,9 @@ export function BoardCard({
 
     return (
         <article
-            className={`bc puls-${puls} ${klasaKoloru(req, colorMode, employees)}${dragging ? " ciagniete" : ""}`}
+            className={`bc puls-${puls} ${klasaKoloru(req, colorMode, employees)}${
+                dragging ? " ciagniete" : ""
+            }`}
             draggable
             onDragStart={(e) => {
                 e.dataTransfer.setData("text/plain", req.id);
@@ -230,7 +292,9 @@ export function BoardCard({
             }}
             tabIndex={0}
             role="button"
-            aria-label={`${req.projectName}, ${req.companyName}, ${kwotaPL(req.quoteValue)}`}
+            aria-label={`${req.projectName}, ${req.companyName}, ${kwotaPL(req.quoteValue)}${
+                nowaPoczta ? ", nowa wiadomość" : ""
+            }`}
             data-assistant-id={`crm-card-${req.number}`}
         >
             <div className="bc-main">
@@ -239,8 +303,15 @@ export function BoardCard({
                 <div className="bc-body">
                     <div className="bc-top">
                         <IkonaKalendarza className={`bc-cal ${pil}`} title={URGENCY_LABELS[pil]} />
-                        <span className="bc-date">{dataPL(req.createdAt)}</span>
+                        <span
+                            className={`bc-date${zalegleNowe ? " stale" : ""}`}
+                            title={zalegleNowe ? `Bez przypisania od ${dniWNowych} dni` : undefined}
+                        >
+                          {dataPL(req.createdAt)}
+                        </span>
+                        {zalegleNowe && <IkonaOczekiwania dni={dniWNowych} />}
                         {issues.length > 0 && <IssueMarker issues={issues} />}
+                        {nowaPoczta && <IkonaPoczty rodzaj={nowaPoczta} />}
                         <span className={`bc-score ${req.score >= 60 ? "hi" : req.score >= 35 ? "mid" : "lo"}`}>
               {req.score}%
             </span>
@@ -291,18 +362,21 @@ export function BoardCard({
             </div>
 
             {glowny && (
-                <div className={`bc-issue ${glowny.severity}`} onClick={(e) => e.stopPropagation()}>
+                <div className={`bc-issue ${glowny.severity}${glowny.waitingSince ? " waiting" : ""}`} onClick={(e) => e.stopPropagation()}>
           <span className="bc-issue-ico" aria-hidden="true">
             {glowny.severity === "error" ? "!" : "△"}
           </span>
                     <span className="bc-issue-text" title={glowny.message}>
             {glowny.title}
           </span>
+                    {glowny.waitingSince && (
+                        <span className="bc-issue-wait">prośbę wysłano {czasWzgledny(glowny.waitingSince)}</span>
+                    )}
                     {issues.length > 1 && <span className="bc-issue-more">+{issues.length - 1}</span>}
                     {glowny.action && (
                         <button
                             type="button"
-                            className={`bc-issue-act${juzWyslano ? " wyslano" : ""}`}
+                            className={`bc-issue-act${juzWyslano ? " wyslano" : ""}${glowny.waitingSince ? " waiting" : ""}`}
                             onClick={() => onAction(req, glowny)}
                             title={
                                 juzWyslano

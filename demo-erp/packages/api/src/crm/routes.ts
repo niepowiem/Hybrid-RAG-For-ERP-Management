@@ -19,6 +19,7 @@ import {
   ComposeMessageSchema,
   SelectVendorSchema,
   RecordQuoteSchema,
+  STICKY_NOTE_COLORS,
   TEMPLATE_KEYS,
   UpdateSettingsSchema,
   CreateFollowUpSchema,
@@ -38,6 +39,7 @@ import {
 import type {
   ActivityKind,
   CrmActivity,
+  CrmEmployee,
   CrmColumn,
   CrmMessage,
   CrmRequest,
@@ -61,7 +63,12 @@ import { przetworzAutomaty, symulujOdpowiedziPodwykonawcow } from "./automation.
 import { crmVendors } from "./vendors.js";
 import { rodzajZalacznika } from "./extract.js";
 import { mailboxAdapter } from "./mailbox.js";
-import { pobierzIPrzetworz, przetworzPonownie, utworzZapytanieZWiadomosci } from "./pipeline.js";
+import { getDgxStatus } from "./ai-gateway.js";
+import {
+  pobierzIPrzetworz,
+  utworzZapytanieZWiadomosci,
+  wyslijPotwierdzeniePrzyjecia,
+} from "./pipeline.js";
 import {
   generujInformacjeOOpiekunie,
   generujProsbeOUzupelnienie,
@@ -78,6 +85,17 @@ function roleFrom(header: unknown): Role {
 }
 
 const userFrom = (role: Role): string => (role === "kierownik" ? "mnowak" : "jkowalski");
+
+/**
+ * Zalogowany pracownik. Nagłówek `x-user-id` ustawia przeglądarka na podstawie
+ * przełącznika „zalogowany jako”; w wersji produkcyjnej zastąpi go tożsamość
+ * z sesji. Korespondencja wychodzi z JEGO konta, nie ze zbiorczej skrzynki
+ * działu — odpowiedź klienta ma wrócić do osoby, która pisała.
+ */
+function pracownikZ(headers: Record<string, unknown>): CrmEmployee | undefined {
+  const id = headers["x-user-id"];
+  return typeof id === "string" ? crmEmployees.find((e) => e.id === id) : undefined;
+}
 
 function wpis(req: CrmRequest, kind: ActivityKind, text: string, user: string): void {
   const a: CrmActivity = { id: nextCrmId(), at: new Date().toISOString(), kind, text, user };
@@ -179,6 +197,7 @@ export function registerCrmRoutes(app: FastifyInstance): void {
       // Ręcznie założone zapytanie jest z definicji „widziane” — nie pulsuje.
       seenAt: new Date().toISOString(),
       stageNotes: [],
+      stickyNotes: [],
       outsourcing: [],
       notes: "",
       companyName: input.companyName,
@@ -435,6 +454,36 @@ export function registerCrmRoutes(app: FastifyInstance): void {
   });
 
   /**
+   * Dodanie kosztorysanta jest osobną operacją domenową. Ogólny PATCH zmienia
+   * bieżącego opiekuna, ale nie powinien odpowiadać za dopisywanie osoby do
+   * historii zespołu — przy niespójnych starszych danych kończyło się to
+   * brakiem wpisu w `assigneeIds`.
+   */
+  app.post("/api/crm/requests/:id/assignees", async (req) => {
+    const { id } = req.params as { id: string };
+    const r = znajdzZapytanie(id);
+    const { employeeId } = z.object({ employeeId: z.string().min(1) }).parse(req.body);
+    const p = crmEmployees.find((e) => e.id === employeeId);
+    if (!p) throw new AppError("ERR-9001", { employeeId });
+
+    const bylNaLiscie = r.assigneeIds.includes(employeeId);
+    const bylBiezacym = r.assigneeId === employeeId;
+    if (!bylNaLiscie) r.assigneeIds.push(employeeId);
+    r.assigneeId = employeeId;
+
+    const kolumna = crmColumns.find((c) => c.employeeId === employeeId);
+    if (kolumna && r.columnId !== kolumna.id) {
+      r.columnId = kolumna.id;
+      r.columnEnteredAt = new Date().toISOString();
+    }
+
+    if (!bylNaLiscie || !bylBiezacym) {
+      wpis(r, "assignee_changed", `Dodano kosztorysanta: ${p.name}.`, userFrom(roleFrom(req.headers["x-user-role"])));
+    }
+    return r;
+  });
+
+  /**
    * Usunięcie kosztorysanta z listy osób, które miały styczność ze sprawą.
    * Gdy usuwamy bieżącego opiekuna, rolę przejmuje poprzedni z listy —
    * sprawa bez opiekuna po cichu to sprawa, którą nikt się nie zajmuje.
@@ -569,10 +618,17 @@ export function registerCrmRoutes(app: FastifyInstance): void {
       quantity: e.quantity,
     }));
 
+    // Nazwa zapytania powstaje z pozycji — osobne pole „tytuł” było kolejną
+    // rubryką do wypełnienia, a i tak wpisywano w nią to samo.
+    const tytul =
+        input.title.trim() !== ""
+            ? input.title.trim()
+            : elements.map((e) => e.title).join(" · ").slice(0, 90);
+
     const item: OutsourcingItem = {
       id: nextCrmId(),
-      title: input.title,
-      deadline: input.deadline,
+      title: tytul,
+      deadline: input.deadline ?? null,
       createdAt: teraz,
       createdBy: user,
       elements,
@@ -633,7 +689,7 @@ export function registerCrmRoutes(app: FastifyInstance): void {
     wpis(
         r,
         "message_sent",
-        `Zapytanie „${item.title}” (${elements.length} ${
+        `Zapytanie „${tytul}” (${elements.length} ${
             elements.length === 1 ? "pozycja" : "pozycji"
         }) wysłane do ${item.inquiries.length} firm: ${item.inquiries.map((q) => q.vendorName).join(", ")}.`,
         user,
@@ -724,14 +780,18 @@ export function registerCrmRoutes(app: FastifyInstance): void {
     const r = znajdzZapytanie(id);
     const input = ComposeMessageSchema.parse(req.body);
     const user = userFrom(roleFrom(req.headers["x-user-role"]));
-    const pracownik = crmEmployees.find((e) => e.email.startsWith(user.slice(0, 4)));
+    const pracownik = pracownikZ(req.headers as Record<string, unknown>);
+    const teraz = new Date().toISOString();
 
     const msg: CrmMessage = {
       id: nextCrmId(),
       kind: input.kind,
       direction: "out",
       authorName: pracownik?.name ?? crmSettings.mailbox.displayName,
+      authorId: pracownik?.id ?? null,
       contactId: null,
+      cc: input.cc,
+      readBy: pracownik ? [pracownik.id] : [],
       to: input.to,
       subject: input.subject,
       body: input.body,
@@ -741,11 +801,27 @@ export function registerCrmRoutes(app: FastifyInstance): void {
       templateKey: input.templateKey,
     };
 
+    // Załączniki wiadomości trafiają do wspólnej listy plików sprawy —
+    // panel „Moje załączniki” pokazuje wszystko, co firma wysłała klientowi.
+    const zalaczniki = input.attachments.map((a) => ({
+      id: nextCrmId(),
+      name: a.name,
+      kind: rodzajZalacznika(a.name),
+      sizeKb: a.sizeKb,
+      source: "own" as const,
+      at: teraz,
+      fromName: pracownik?.name ?? user,
+      messageId: msg.id,
+      messageSubject: msg.subject,
+    }));
+    r.attachments.push(...zalaczniki);
+
     if (input.send) {
-      const wyslana = await wyslijMock(msg);
+      const konto = pracownik?.email ?? crmSettings.mailbox.account;
+      const wyslana = { ...(await wyslijMock(msg)), sentFrom: konto };
       r.messages.push(wyslana);
       r.lastContactAt = wyslana.sentAt;
-      wpis(r, "message_sent", `Wysłano wiadomość: ${msg.subject} (konto ${crmSettings.mailbox.account}).`, user);
+      wpis(r, "message_sent", `Wysłano wiadomość: ${msg.subject} (konto ${konto}).`, user);
     } else {
       r.messages.push(msg);
       wpis(r, "message_generated", `Zapisano szkic: ${msg.subject}`, user);
@@ -812,6 +888,22 @@ export function registerCrmRoutes(app: FastifyInstance): void {
         .header("content-type", "text/plain; charset=utf-8")
         .header("content-disposition", `inline; filename="${a.name}.txt"`)
         .send(tresc);
+  });
+
+  /** Oznaczenie wiadomości jako przeczytanych przez zalogowaną osobę. */
+  app.post("/api/crm/requests/:id/messages/read", async (req) => {
+    const { id } = req.params as { id: string };
+    const r = znajdzZapytanie(id);
+    const pracownik = pracownikZ(req.headers as Record<string, unknown>);
+    if (!pracownik) return r;
+    const { messageIds } = z
+        .object({ messageIds: z.array(z.string()).optional() })
+        .parse(req.body ?? {});
+    for (const m of r.messages) {
+      if (messageIds && !messageIds.includes(m.id)) continue;
+      if (!m.readBy.includes(pracownik.id)) m.readBy.push(pracownik.id);
+    }
+    return r;
   });
 
   /** Oznaczenie karty jako obejrzanej — wygasza pulsowanie „nowego”. */
@@ -889,7 +981,35 @@ export function registerCrmRoutes(app: FastifyInstance): void {
     return r;
   });
 
-  /** Notatka przy etapie — jedna na etap, nadpisywana. */
+  app.post("/api/crm/requests/:id/sticky-notes", async (req) => {
+    const { id } = req.params as { id: string };
+    const r = znajdzZapytanie(id);
+    const { text } = z.object({ text: z.string().trim().min(1).max(600) }).parse(req.body);
+    const pracownik = pracownikZ(req.headers as Record<string, unknown>);
+    const color = STICKY_NOTE_COLORS[Math.floor(Math.random() * STICKY_NOTE_COLORS.length)] ?? "yellow";
+    r.stickyNotes.push({
+      id: nextCrmId(),
+      text,
+      authorId: pracownik?.id ?? null,
+      authorName: pracownik?.name ?? userFrom(roleFrom(req.headers["x-user-role"])),
+      createdAt: new Date().toISOString(),
+      color,
+    });
+    wpis(r, "note_added", `Dodano notatkę zespołu: ${text.slice(0, 80)}.`, pracownik?.name ?? "zespół");
+    return r;
+  });
+
+  app.delete("/api/crm/requests/:id/sticky-notes/:noteId", async (req) => {
+    const { id, noteId } = req.params as { id: string; noteId: string };
+    const r = znajdzZapytanie(id);
+    const note = r.stickyNotes.find((n) => n.id === noteId);
+    if (!note) throw new AppError("ERR-9001", { crmRequestId: id, noteId });
+    r.stickyNotes = r.stickyNotes.filter((n) => n.id !== noteId);
+    wpis(r, "note_added", `Usunięto notatkę zespołu autora ${note.authorName}.`, userFrom(roleFrom(req.headers["x-user-role"])));
+    return r;
+  });
+
+  /** Notatka przy etapie - jedna na etap, nadpisywana. */
   app.post("/api/crm/requests/:id/stage-note", async (req) => {
     const { id } = req.params as { id: string };
     const r = znajdzZapytanie(id);
@@ -1017,18 +1137,33 @@ export function registerCrmRoutes(app: FastifyInstance): void {
     const msg = r.messages[idx];
     if (idx < 0 || !msg) throw new AppError("ERR-9001", { messageId: mid });
     const user = userFrom(roleFrom(req.headers["x-user-role"]));
+    const pracownik = pracownikZ(req.headers as Record<string, unknown>);
 
     // Treść mogła zostać zmieniona w podglądzie przed wysłaniem.
     const patch = z
-        .object({ subject: z.string().optional(), body: z.string().optional() })
+        .object({
+          to: z.string().email().optional(),
+          cc: z.array(z.string().email()).optional(),
+          subject: z.string().optional(),
+          body: z.string().optional(),
+        })
         .parse(req.body ?? {});
+    if (patch.to) msg.to = patch.to;
+    if (patch.cc) msg.cc = patch.cc;
     if (patch.subject) msg.subject = patch.subject;
     if (patch.body) msg.body = patch.body;
 
-    const wyslany = await wyslijMock(msg);
+    const konto = pracownik?.email ?? crmSettings.mailbox.account;
+    const wyslany = {
+      ...(await wyslijMock(msg)),
+      authorName: pracownik?.name ?? msg.authorName,
+      authorId: pracownik?.id ?? msg.authorId,
+      readBy: pracownik ? [...new Set([...msg.readBy, pracownik.id])] : msg.readBy,
+      sentFrom: konto,
+    };
     r.messages[idx] = wyslany;
     r.lastContactAt = wyslany.sentAt;
-    wpis(r, "message_sent", `Wysłano wiadomość „${wyslany.subject}” na adres ${wyslany.to}.`, user);
+    wpis(r, "message_sent", `Wysłano wiadomość "${wyslany.subject}" na adres ${wyslany.to} (konto ${konto}).`, user);
     return r;
   });
 
@@ -1037,8 +1172,37 @@ export function registerCrmRoutes(app: FastifyInstance): void {
   app.get("/api/crm/mailbox", async () => ({
     state: mailboxState,
     adapter: mailboxAdapter.name,
+    ai: await getDgxStatus(),
     messages: [...inboxMessages].sort((a, b) => b.receivedAt.localeCompare(a.receivedAt)),
   }));
+
+  app.get("/api/crm/mailbox/messages/:id/attachments/:aid", async (req, reply) => {
+    const { id, aid } = req.params as { id: string; aid: string };
+    const msg = inboxMessages.find((message) => message.id === id);
+    if (!msg) throw new AppError("ERR-9003", { messageId: id });
+    const attachment = msg.attachments.find((item) => item.id === aid);
+    if (!attachment) throw new AppError("ERR-9015", { attachmentId: aid });
+
+    const content = [
+      "PLIK DEMONSTRACYJNY — załącznik wiadomości w skrzynce CRM",
+      "",
+      `Nazwa pliku:    ${attachment.name}`,
+      `Rodzaj:         ${attachment.kind}`,
+      `Rozmiar (meta): ${attachment.sizeKb} kB`,
+      `Nadawca:        ${msg.from} <${msg.fromEmail}>`,
+      `Wiadomość:      ${msg.subject}`,
+      `Otrzymano:      ${msg.receivedAt}`,
+      "",
+      "Wersja demonstracyjna przechowuje wyłącznie metadane załącznika.",
+      "Po podpięciu magazynu plików ten endpoint zwróci oryginalną zawartość.",
+    ].join("\n");
+    const safeName = attachment.name.replace(/["\r\n]/g, "_");
+
+    return reply
+        .header("content-type", "text/plain; charset=utf-8")
+        .header("content-disposition", `inline; filename="${safeName}.txt"`)
+        .send(content);
+  });
 
   app.post("/api/crm/mailbox/poll", async () => {
     try {
@@ -1046,6 +1210,7 @@ export function registerCrmRoutes(app: FastifyInstance): void {
       return {
         state: mailboxState,
         adapter: mailboxAdapter.name,
+        ai: await getDgxStatus(true),
         result: wynik,
         messages: [...inboxMessages].sort((a, b) => b.receivedAt.localeCompare(a.receivedAt)),
       };
@@ -1064,8 +1229,14 @@ export function registerCrmRoutes(app: FastifyInstance): void {
 
     msg.category = category;
     msg.categoryManual = true;
-    // Zmiana kategorii to nowa przesłanka — przetwarzamy wiadomość od nowa.
-    if (msg.crmRequestId == null) przetworzPonownie(msg);
+    // Ręczna klasyfikacja nigdy nie tworzy sprawy CRM w tle. Zapytanie
+    // czeka na świadomą akceptację, a pozostała korespondencja znika z
+    // kolejki bez prezentowania operatorowi technicznych komunikatów.
+    if (msg.crmRequestId == null) {
+      msg.status = category === "inquiry" ? "needs_review" : "skipped";
+      msg.note = null;
+      msg.duplicateOfId = null;
+    }
     return msg;
   });
 
@@ -1076,6 +1247,8 @@ export function registerCrmRoutes(app: FastifyInstance): void {
     if (!msg) throw new AppError("ERR-9003", { messageId: id });
     if (msg.crmRequestId) throw new AppError("ERR-9004", { messageId: id });
 
+    msg.category = "inquiry";
+    msg.categoryManual = true;
     const nowe = utworzZapytanieZWiadomosci(msg);
     if (msg.duplicateOfId) {
       const powiazane = crmRequests.find((r) => r.id === msg.duplicateOfId);
@@ -1087,6 +1260,7 @@ export function registerCrmRoutes(app: FastifyInstance): void {
       );
     }
     crmRequests.unshift(nowe);
+    wyslijPotwierdzeniePrzyjecia(nowe);
     msg.crmRequestId = nowe.id;
     msg.status = "processed";
     msg.note = null;
@@ -1106,8 +1280,9 @@ export function registerCrmRoutes(app: FastifyInstance): void {
     const { id } = req.params as { id: string };
     const msg = inboxMessages.find((m) => m.id === id);
     if (!msg) throw new AppError("ERR-9003", { messageId: id });
+    if (msg.crmRequestId) throw new AppError("ERR-9004", { messageId: id });
     msg.status = "needs_review";
-    msg.note = "Oznaczone do weryfikacji przez operatora.";
+    msg.note = null;
     return msg;
   });
 }

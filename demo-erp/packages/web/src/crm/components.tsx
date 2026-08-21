@@ -150,30 +150,40 @@ export function Modal({
                         children,
                         footer,
                         wide,
+                        className = "",
                       }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
   wide?: boolean;
+  className?: string;
 }) {
   const box = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+
+  // Funkcja zamknięcia jest często tworzona inline przez rodzica. Nie może być
+  // zależnością efektu ustawiającego fokus, bo każda wpisana litera powodowałaby
+  // ponowne skupienie pierwszego przycisku w oknie (zwykle krzyżyka).
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onCloseRef.current();
     };
     document.addEventListener("keydown", onKey);
     box.current?.querySelector<HTMLElement>(
-        "input, select, textarea, button",
+        ".crm-modal-body input, .crm-modal-body select, .crm-modal-body textarea, .crm-modal-body button",
     )?.focus();
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, []);
 
   return (
       <div className="crm-modal-bg" onMouseDown={onClose}>
         <div
-            className={`crm-modal ${wide ? "wide" : ""}`}
+            className={`crm-modal${wide ? " wide" : ""}${className ? ` ${className}` : ""}`}
             role="dialog"
             aria-modal="true"
             aria-label={title}

@@ -11,7 +11,7 @@
  * poza jedną linią importu.
  */
 
-import { ocenKompletnosc, sugerowanyScoring } from "@demo-erp/shared";
+import { sugerowanyScoring } from "@demo-erp/shared";
 import type {
   AttachmentKind,
   CrmMessage,
@@ -25,6 +25,7 @@ import { generujPotwierdzenieZapytania } from "./messages.js";
 import { crmSettings } from "./settings.js";
 import { znajdzDuplikat } from "./duplicates.js";
 import { extractFromMail, rodzajZalacznika } from "./extract.js";
+import { extractRoundWithOllama } from "./ollama-extractor.js";
 import { mailboxAdapter, MailboxError } from "./mailbox.js";
 import type { RawMail } from "./mailbox.js";
 import {
@@ -117,7 +118,10 @@ export function utworzZapytanieZWiadomosci(msg: InboxMessage): CrmRequest {
     kind: "incoming",
     direction: "in",
     authorName: msg.from,
+    authorId: null,
     contactId: null,
+    cc: [],
+    readBy: [],
     to: "Dział Handlowy",
     subject: msg.subject,
     body: msg.body,
@@ -140,6 +144,7 @@ export function utworzZapytanieZWiadomosci(msg: InboxMessage): CrmRequest {
     columnEnteredAt: new Date().toISOString(),
     seenAt: null,
     stageNotes: [],
+    stickyNotes: [],
     outsourcing: [],
     notes: "",
     companyName: nazwaFirmy,
@@ -177,26 +182,99 @@ export function utworzZapytanieZWiadomosci(msg: InboxMessage): CrmRequest {
   return req;
 }
 
+/**
+ * Wysyła jedno automatyczne potwierdzenie, gdy wiadomość trafia na tablicę.
+ * Wspólna funkcja obsługuje zarówno klasyfikację automatyczną, jak i
+ * ręczną akceptację ze skrzynki, bez ryzyka podwójnej wysyłki.
+ */
+export function wyslijPotwierdzeniePrzyjecia(req: CrmRequest): void {
+  if (!crmSettings.automation.acknowledgeNewRequests) return;
+  if (req.messages.some((m) => m.templateKey === "acknowledgement" && m.sentAt)) return;
+
+  const potwierdzenie = generujPotwierdzenieZapytania(req);
+  potwierdzenie.sentAt = new Date().toISOString();
+  potwierdzenie.sentFrom = crmSettings.mailbox.account;
+  req.messages.push(potwierdzenie);
+  req.lastContactAt = potwierdzenie.sentAt;
+  req.activity.push({
+    id: nextCrmId(),
+    at: potwierdzenie.sentAt,
+    kind: "message_sent",
+    text: `Automat: wysłano potwierdzenie przyjęcia zapytania do ${req.email}.`,
+    user: "system",
+  });
+}
+
 /** Pojedyncza wiadomość: od surowego rekordu do wpisu w skrzynce. */
-function przetworz(msg: InboxMessage): void {
+async function przetworz(msg: InboxMessage): Promise<void> {
   try {
-    // 0. odpowiedź na follow-up: rezygnacja klienta zamyka sprawę.
-    //    Sprawdzamy PRZED klasyfikacją, bo „nie jesteśmy zainteresowani” nie
-    //    jest zapytaniem ofertowym i klasyfikator odłożyłby to na bok.
-    const odmowa = obsluzOdmowe(msg.fromEmail, msg.subject, msg.body);
+    const klasyfikacjaAutomatyczna = crmSettings.automation.mailClassificationMode === "automatic";
+    let przeslankiKlasyfikacji: string[] = [];
+
+    if (!klasyfikacjaAutomatyczna) {
+      msg.classification = null;
+    }
+
+    if (!klasyfikacjaAutomatyczna && !msg.categoryManual) {
+      msg.extracted = extractFromMail({
+        from: msg.from,
+        fromEmail: msg.fromEmail,
+        subject: msg.subject,
+        body: msg.body,
+        attachments: msg.attachments,
+      });
+      msg.status = "needs_review";
+      msg.note = null;
+      return;
+    }
+
+    if (klasyfikacjaAutomatyczna) {
+      // Klasyfikacja jest pierwszą bramką bezpieczeństwa. Dzięki temu
+      // awaria DGX blokuje również automatyczne zamknięcie sprawy jako odmowy.
+      const kl = await classifyMail(msg.subject, msg.body, {
+        messageId: msg.externalId,
+        attachments: msg.attachments.map((attachment) => attachment.name),
+      });
+      przeslankiKlasyfikacji = kl.reasons;
+      msg.classification = {
+        source: kl.source,
+        confidence: kl.confidence,
+        threshold: kl.threshold,
+        modelName: kl.modelName,
+        modelVersion: kl.modelVersion,
+        latencyMs: kl.latencyMs,
+        usedFallback: kl.usedFallback,
+        fallbackReason: kl.fallbackReason,
+      };
+      if (!msg.categoryManual) msg.category = kl.category;
+
+      // Jeżeli skonfigurowany model zniknął, nie wysyłamy automatycznej
+      // odpowiedzi na podstawie samych reguł. Wiadomość zostaje w skrzynce
+      // do weryfikacji, więc awaria DGX nie może po cichu zgubić leada.
+      if (kl.usedFallback && !msg.categoryManual) {
+        msg.status = "needs_review";
+        msg.note = null;
+        return;
+      }
+    }
+
+    // 0. Odpowiedź na follow-up: dopiero po udanej klasyfikacji może zamknąć
+    // sprawę. Przy fallbacku powyżej zawsze decyduje człowiek.
+    const odmowa = klasyfikacjaAutomatyczna ? obsluzOdmowe(msg.fromEmail, msg.subject, msg.body) : null;
     if (odmowa) {
       msg.status = "processed";
       msg.category = "other";
       msg.crmRequestId = odmowa.id;
-      msg.note = `Odpowiedź odczytana jako rezygnacja — zapytanie ${odmowa.number} przeniesione do przegranych.`;
-      // Treść odpowiedzi ląduje w korespondencji sprawy, żeby było widać,
-      // na jakiej podstawie automat ją zamknął.
+      msg.note = `Odpowiedź odczytana jako rezygnacja - zapytanie ${odmowa.number} przeniesione do przegranych.`;
       odmowa.messages.push({
         id: nextCrmId(),
         kind: "incoming",
         direction: "in",
         authorName: msg.from,
+        authorId: null,
         contactId: null,
+        cc: [],
+        readBy: [],
         to: "Dział Handlowy",
         subject: msg.subject,
         body: msg.body,
@@ -208,14 +286,10 @@ function przetworz(msg: InboxMessage): void {
       return;
     }
 
-    // 1. klasyfikacja
-    const kl = classifyMail(msg.subject, msg.body);
-    if (!msg.categoryManual) msg.category = kl.category;
-
     if (msg.category === "other") {
       msg.status = "skipped";
       msg.note = `Zaklasyfikowano jako pozostałą korespondencję${
-          kl.reasons.length > 0 ? ` (${kl.reasons[0]})` : ""
+          przeslankiKlasyfikacji.length > 0 ? ` (${przeslankiKlasyfikacji[0]})` : ""
       }.`;
       return;
     }
@@ -235,45 +309,13 @@ function przetworz(msg: InboxMessage): void {
       subject: msg.subject,
       extracted: msg.extracted,
     });
-    if (dup) {
-      msg.status = "needs_review";
-      msg.duplicateOfId = dup.requestId;
-      msg.note = `Możliwy duplikat zapytania ${dup.number}: ${dup.reasons.join(", ")}. Zapytanie nie zostało utworzone automatycznie.`;
-      return;
-    }
-
-    // 6. utworzenie zapytania CRM
-    const req = utworzZapytanieZWiadomosci(msg);
-    crmRequests.unshift(req);
-    msg.crmRequestId = req.id;
-
-    // 7. potwierdzenie przyjęcia — wychodzi od razu, bo klient ma się
-    //    dowiedzieć, że wiadomość doszła, zanim zdąży zadzwonić z pytaniem.
-    if (crmSettings.automation.acknowledgeNewRequests) {
-      const potwierdzenie = generujPotwierdzenieZapytania(req);
-      potwierdzenie.sentAt = new Date().toISOString();
-      potwierdzenie.sentFrom = crmSettings.mailbox.account;
-      req.messages.push(potwierdzenie);
-      req.lastContactAt = potwierdzenie.sentAt;
-      req.activity.push({
-        id: nextCrmId(),
-        at: potwierdzenie.sentAt,
-        kind: "message_sent",
-        text: `Automat: wysłano potwierdzenie przyjęcia zapytania do ${req.email}.`,
-        user: "system",
-      });
-    }
-
-    // 4. ocena kompletności decyduje, czy sprawa wymaga ludzkiego oka
-    const k = ocenKompletnosc(req);
-    if (k.status === "missing_data" || msg.extracted.companyName == null) {
-      msg.status = "needs_review";
-      msg.note =
-          "Zapytanie utworzone, ale nie udało się odczytać kompletu danych — sprawdź i uzupełnij ręcznie.";
-    } else {
-      msg.status = "processed";
-      msg.note = null;
-    }
+    msg.duplicateOfId = dup?.requestId ?? null;
+    // Klasyfikacja kończy się w kolejce „Do zatwierdzenia”. Dopiero jawna
+    // akcja operatora może utworzyć klienta, sprawę CRM i potwierdzenie.
+    msg.status = "needs_review";
+    msg.crmRequestId = null;
+    msg.note = null;
+    return;
   } catch (e) {
     msg.status = "error";
     msg.note = `Błąd przetwarzania: ${(e as Error).message}`;
@@ -305,6 +347,7 @@ function doWiadomosci(raw: RawMail): InboxMessage {
     status: "processing",
     category: "other",
     categoryManual: false,
+    classification: null,
     extracted: null,
     crmRequestId: null,
     duplicateOfId: null,
@@ -344,7 +387,34 @@ export async function pobierzIPrzetworz(): Promise<PollResult> {
   // Krótka pauza między pobraniem a przetworzeniem: status „przetwarzanie”
   // ma być realnym stanem, a nie etykietą, której nikt nigdy nie zobaczy.
   if (dodane.length > 0) await spij(400);
-  for (const msg of dodane) przetworz(msg);
+  for (const msg of dodane) await przetworz(msg);
+
+  // Drugi etap zaczyna się dopiero wtedy, gdy DGX zakończy klasyfikację całej
+  // tury. Do Ollamy trafiają wyłącznie potwierdzone wyniki klasyfikatora AI,
+  // nigdy wiadomości z fallbacku regułowego ani pozostała korespondencja.
+  const zapytaniaDoEkstrakcji = dodane.filter((msg) =>
+    msg.category === "inquiry" &&
+    msg.classification?.source === "dgx" &&
+    !msg.classification.usedFallback &&
+    msg.crmRequestId == null,
+  );
+  try {
+    const wynikiOllamy = await extractRoundWithOllama(zapytaniaDoEkstrakcji);
+    for (const msg of zapytaniaDoEkstrakcji) {
+      const extracted = wynikiOllamy.get(msg.externalId);
+      if (!extracted) continue;
+      msg.extracted = extracted;
+      const duplicate = znajdzDuplikat(crmRequests, {
+        fromEmail: msg.fromEmail,
+        subject: msg.subject,
+        extracted,
+      });
+      msg.duplicateOfId = duplicate?.requestId ?? null;
+    }
+  } catch {
+    // Bezpieczny fallback: zachowujemy konserwatywny wynik lokalnego parsera.
+    // Wiadomość nadal czeka na zatwierdzenie i nie tworzy automatycznie CRM.
+  }
 
   mailboxState.lastCheckedAt = new Date().toISOString();
   mailboxState.lastResult = "ok";
@@ -362,9 +432,9 @@ export async function pobierzIPrzetworz(): Promise<PollResult> {
 }
 
 /** Ponowne przetworzenie wiadomości — np. po ręcznej zmianie kategorii. */
-export function przetworzPonownie(msg: InboxMessage): void {
+export async function przetworzPonownie(msg: InboxMessage): Promise<void> {
   msg.status = "processing";
   msg.duplicateOfId = null;
   msg.note = null;
-  przetworz(msg);
+  await przetworz(msg);
 }

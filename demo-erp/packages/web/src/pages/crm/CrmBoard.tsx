@@ -96,6 +96,7 @@ export function CrmBoardPage() {
     messageId: string;
     title: string;
     intro: string;
+    severity: CrmIssue["severity"];
     poprzednia: CrmMessage | null;
   } | null>(null);
   const [powiadomienie, setPowiadomienie] = useState<{
@@ -104,6 +105,7 @@ export function CrmBoardPage() {
     poprzedniaKolumna: string;
     poprzedniAssignee: string | null;
   } | null>(null);
+  const [cofaniePowiadomienia, setCofaniePowiadomienia] = useState(false);
   const [loading, setLoading] = useState(true);
   const [blad, setBlad] = useState<string | null>(null);
 
@@ -233,6 +235,31 @@ export function CrmBoardPage() {
     }
   }
 
+  async function cofnijPrzeniesienieZPowiadomienia(): Promise<void> {
+    const dane = powiadomienie;
+    if (!dane || cofaniePowiadomienia) return;
+    setCofaniePowiadomienia(true);
+    try {
+      await crmApi.discardMessage(dane.req.id, dane.messageId);
+      const przeniesione = await crmApi.move(dane.req.id, dane.poprzedniaKolumna);
+      const finalne =
+          dane.poprzedniAssignee && przeniesione.assigneeId !== dane.poprzedniAssignee
+              ? await crmApi.patch(dane.req.id, { assigneeId: dane.poprzedniAssignee })
+              : przeniesione;
+      podmien(finalne);
+      setPowiadomienie(null);
+      notify("Cofnięto przeniesienie", `${dane.req.number} wróciło na poprzednie miejsce.`);
+    } catch (e) {
+      notify(
+          "Nie udało się cofnąć",
+          e instanceof ApiError ? e.body.message : "Spróbuj ponownie.",
+          "err",
+      );
+    } finally {
+      setCofaniePowiadomienia(false);
+    }
+  }
+
   /** Szybkie akcje z paska problemu — na kafelku i w panelu szczegółów. */
   const akcjaProblemu = useCallback(
       async (req: CrmRequest, issue: CrmIssue): Promise<void> => {
@@ -257,6 +284,7 @@ export function CrmBoardPage() {
             messageId,
             title: issue.actionLabel ?? "Wyślij wiadomość",
             intro: `${request.number} · ${request.companyName} — ${issue.message}`,
+            severity: issue.severity,
             poprzednia:
                 request.messages.find(
                     (m) => m.templateKey === key && m.sentAt && m.id !== messageId,
@@ -571,6 +599,7 @@ export function CrmBoardPage() {
                 messageId={doWyslania.messageId}
                 title={doWyslania.title}
                 intro={doWyslania.intro}
+                introTone={doWyslania.severity}
                 poprzednia={doWyslania.poprzednia}
                 onClose={(r) => {
                   if (r) podmien(r);
@@ -580,15 +609,42 @@ export function CrmBoardPage() {
                   podmien(r);
                   setDoWyslania(null);
                 }}
+                pracownicy={employees}
+                firma={ustawieniaModulu?.company ?? null}
             />
         )}
 
         {powiadomienie && (
-            <PowiadomienieOOpiekunie
-                dane={powiadomienie}
-                employees={employees}
-                onDone={(r) => {
+            <SendMessageModal
+                req={powiadomienie.req}
+                messageId={powiadomienie.messageId}
+                title="Poinformować klienta o opiekunie?"
+                intro={`${powiadomienie.req.number} · ${powiadomienie.req.companyName} — sprawę prowadzi teraz ${
+                    employees.find((e) => e.id === powiadomienie.req.assigneeId)?.name ?? "wskazany kosztorysant"
+                }.`}
+                poprzednia={
+                  [...powiadomienie.req.messages].reverse().find(
+                      (m) => m.templateKey === "assignment" && m.sentAt && m.id !== powiadomienie.messageId,
+                  ) ?? null
+                }
+                pracownicy={employees}
+                firma={ustawieniaModulu?.company ?? null}
+                externalBusy={cofaniePowiadomienia}
+                extraActions={
+                  <button
+                      type="button"
+                      onClick={() => void cofnijPrzeniesienieZPowiadomienia()}
+                      disabled={cofaniePowiadomienia}
+                  >
+                    {cofaniePowiadomienia ? "Cofanie…" : "Cofnij przeniesienie"}
+                  </button>
+                }
+                onClose={(r) => {
                   if (r) podmien(r);
+                  setPowiadomienie(null);
+                }}
+                onSent={(r) => {
+                  podmien(r);
                   setPowiadomienie(null);
                 }}
             />
@@ -883,111 +939,6 @@ function NowaKolumnaModal({
         )}
 
         {blad && <p className="crm-note danger">{blad}</p>}
-      </Modal>
-  );
-}
-
-// ------------------- powiadomienie klienta o opiekunie ---------------------
-
-/**
- * Okno po przypisaniu kosztorysanta. Trzy wyjścia, bo trzy różne intencje:
- * „Wyślij” (klient dostaje kontakt), „Nie wysyłaj” (przypisanie zostaje, ale
- * klient nie musi o nim wiedzieć — np. przy przekazaniu wewnętrznym) oraz
- * „Cofnij”, które odwraca całe przeniesienie karty. Krzyżyk działa jak
- * „Nie wysyłaj”: zamknięcie okna nie może po cichu cofać pracy, którą ktoś
- * właśnie wykonał.
- */
-function PowiadomienieOOpiekunie({
-                                   dane,
-                                   employees,
-                                   onDone,
-                                 }: {
-  dane: { req: CrmRequest; messageId: string; poprzedniaKolumna: string; poprzedniAssignee: string | null };
-  employees: CrmEmployee[];
-  onDone: (r: CrmRequest | null) => void;
-}) {
-  const [busy, setBusy] = useState<"send" | "skip" | "undo" | null>(null);
-  const msg = dane.req.messages.find((m) => m.id === dane.messageId);
-  const opiekun = employees.find((e) => e.id === dane.req.assigneeId);
-  const [subject, setSubject] = useState(msg?.subject ?? "");
-  const [body, setBody] = useState(msg?.body ?? "");
-
-  async function wyslij(): Promise<void> {
-    setBusy("send");
-    try {
-      const r = await crmApi.sendMessage(dane.req.id, dane.messageId, { subject, body });
-      notify("Wiadomość wysłana", `${dane.req.companyName} wie, kto prowadzi sprawę.`);
-      onDone(r);
-    } catch (e) {
-      notify("Nie udało się wysłać", e instanceof ApiError ? e.body.message : "Spróbuj ponownie.", "err");
-      setBusy(null);
-    }
-  }
-
-  async function nieWysylaj(): Promise<void> {
-    setBusy("skip");
-    try {
-      onDone(await crmApi.discardMessage(dane.req.id, dane.messageId));
-    } catch {
-      onDone(null);
-    }
-  }
-
-  async function cofnij(): Promise<void> {
-    setBusy("undo");
-    try {
-      await crmApi.discardMessage(dane.req.id, dane.messageId);
-      const r = await crmApi.move(dane.req.id, dane.poprzedniaKolumna);
-      // Przeniesienie do „Nowych” zdejmuje przypisanie samo; przy powrocie do
-      // innej kolumny przywracamy poprzedniego opiekuna jawnie.
-      const finalny =
-          dane.poprzedniAssignee && r.assigneeId !== dane.poprzedniAssignee
-              ? await crmApi.patch(dane.req.id, { assigneeId: dane.poprzedniAssignee })
-              : r;
-      notify("Cofnięto przeniesienie", `${dane.req.number} wrócił na poprzednie miejsce.`);
-      onDone(finalny);
-    } catch (e) {
-      notify("Nie udało się cofnąć", e instanceof ApiError ? e.body.message : "Spróbuj ponownie.", "err");
-      setBusy(null);
-    }
-  }
-
-  return (
-      <Modal
-          title="Poinformować klienta o opiekunie?"
-          onClose={() => void nieWysylaj()}
-          footer={
-            <>
-              <button onClick={() => void cofnij()} disabled={busy != null}>
-                Cofnij przeniesienie
-              </button>
-              <span className="spacer" />
-              <button onClick={() => void nieWysylaj()} disabled={busy != null}>
-                Nie wysyłaj
-              </button>
-              <button className="primary" onClick={() => void wyslij()} disabled={busy != null}>
-                {busy === "send" ? "Wysyłanie…" : "Wyślij"}
-              </button>
-            </>
-          }
-      >
-        <p className="crm-note">
-          {dane.req.number} · {dane.req.companyName} — sprawę prowadzi teraz{" "}
-          <strong>{opiekun?.name ?? "wskazany kosztorysant"}</strong>. Treść możesz poprawić przed
-          wysłaniem.
-        </p>
-        <label className="dr-field">
-          <span>Temat</span>
-          <input value={subject} onChange={(e) => setSubject(e.target.value)} />
-        </label>
-        <label className="dr-field">
-          <span>Treść</span>
-          <textarea rows={10} value={body} onChange={(e) => setBody(e.target.value)} />
-        </label>
-        <p className="crm-note">
-          „Nie wysyłaj” zostawia przypisanie bez powiadamiania klienta. „Cofnij przeniesienie”
-          przywraca kartę tam, skąd ją przeciągnięto.
-        </p>
       </Modal>
   );
 }

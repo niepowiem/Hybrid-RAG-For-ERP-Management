@@ -11,7 +11,7 @@
  */
 
 import { useEffect, useState } from "react";
-import type { InboxMessage, MailboxState } from "@demo-erp/shared";
+import type { DgxStatus, InboxMessage, MailboxState } from "@demo-erp/shared";
 import { crmApi } from "./client.js";
 import { notify } from "../ui.js";
 
@@ -19,6 +19,7 @@ export interface MailboxSnapshotState {
   messages: InboxMessage[];
   state: MailboxState | null;
   adapter: string;
+  ai: DgxStatus | null;
   /** true w trakcie pobierania — pod stan ładowania w interfejsie. */
   loading: boolean;
   /** Komunikat ostatniego nieudanego pobrania; null gdy ostatnie się udało. */
@@ -32,7 +33,8 @@ const POLL_MS = 30_000;
 let snapshot: MailboxSnapshotState = {
   messages: [],
   state: null,
-  adapter: "—",
+  adapter: "-",
+  ai: null,
   loading: false,
   error: null,
   ready: false,
@@ -56,6 +58,7 @@ export async function sprawdzSkrzynke(recznie = false): Promise<void> {
       messages: snap.messages,
       state: snap.state,
       adapter: snap.adapter,
+      ai: snap.ai,
       loading: false,
       error: null,
       ready: true,
@@ -79,7 +82,7 @@ export async function sprawdzSkrzynke(recznie = false): Promise<void> {
 async function wczytajStan(): Promise<void> {
   try {
     const snap = await crmApi.mailbox();
-    ustaw({ messages: snap.messages, state: snap.state, adapter: snap.adapter, ready: true });
+    ustaw({ messages: snap.messages, state: snap.state, adapter: snap.adapter, ai: snap.ai, ready: true });
   } catch {
     ustaw({ ready: true });
   }

@@ -22,6 +22,7 @@ import type {
   InboxMessage,
   MailboxState,
   StageNote,
+  StickyNote,
 } from "@demo-erp/shared";
 
 let seq = 0;
@@ -98,6 +99,7 @@ type ZapytanieBazowe = Omit<
     | "columnEnteredAt"
     | "seenAt"
     | "stageNotes"
+    | "stickyNotes"
     | "notes"
     | "outsourcing"
     | "assigneeIds"
@@ -107,7 +109,10 @@ type ZapytanieBazowe = Omit<
   // Pola opisujące pochodzenie plików i autorstwo wiadomości dokładamy niżej
   // w `uzupelnij()` — w treści zapytań demo tylko by hałasowały.
   attachments: Omit<CrmAttachment, "source" | "at" | "fromName" | "messageId" | "messageSubject">[];
-  messages: Omit<CrmMessage, "direction" | "authorName" | "contactId" | "sentFrom" | "templateKey">[];
+  messages: Omit<
+      CrmMessage,
+      "direction" | "authorName" | "authorId" | "contactId" | "cc" | "readBy" | "sentFrom" | "templateKey"
+  >[];
 };
 
 const zapytaniaBazowe: ZapytanieBazowe[] = [
@@ -779,7 +784,10 @@ export const crmRequests: CrmRequest[] = zapytaniaBazowe.map((r) => {
     kind: "incoming",
     direction: "in",
     authorName: r.contactName,
+    authorId: null,
     contactId: null,
+    cc: [],
+    readBy: [],
     to: "Dział Handlowy",
     subject: tematPierwotnej,
     body: `Dzień dobry,\n\n${r.description}\n\n${r.quantity ? `Ilość: ${r.quantity}\n` : ""}${
@@ -805,17 +813,38 @@ export const crmRequests: CrmRequest[] = zapytaniaBazowe.map((r) => {
       ...m,
       direction: "out" as const,
       authorName: "Dział Handlowy",
+      authorId: null,
       contactId: null,
+      cc: [],
+      readBy: [],
       sentFrom: "oferty@norderp.pl",
       templateKey: null,
     })),
   ];
+  const autorzyLegacy: Record<string, { id: string; name: string }> = {
+    jkowalski: { id: "e-2", name: "Jakub Kowalski" },
+    elis: { id: "e-3", name: "Ewa Lis" },
+    rduda: { id: "e-4", name: "Rafał Duda" },
+    mnowak: { id: "e-1", name: "Magdalena Nowak" },
+  };
+  const autorLegacy = autorzyLegacy[dane.stageNotes.at(-1)?.user ?? ""];
+  const stickyNotes: StickyNote[] = dane.notes.trim()
+      ? [{
+        id: nextCrmId(),
+        text: dane.notes,
+        authorId: autorLegacy?.id ?? null,
+        authorName: autorLegacy?.name ?? "Zespół handlowy",
+        createdAt: r.createdAt,
+        color: (["yellow", "blue", "pink"] as const)[Number(r.id.replace(/\D/g, "")) % 3] ?? "yellow",
+      }]
+      : [];
   return {
     ...r,
     ...dane,
     outsourcing: [],
     attachments,
     messages,
+    stickyNotes,
     assigneeIds: r.assigneeId ? [r.assigneeId] : [],
     columnEnteredAt: dane.columnEnteredAt,
   };
@@ -848,6 +877,11 @@ const wiadomosciBazowe: (Omit<InboxMessage, "attachments"> & {
     status: "processed",
     category: "inquiry",
     categoryManual: false,
+    classification: {
+      source: "heuristic", confidence: 1, threshold: null,
+      modelName: "Reguły lokalne", modelVersion: null, latencyMs: 1.2,
+      usedFallback: false, fallbackReason: null,
+    },
     extracted: {
       companyName: "Stalmex Sp. z o.o.",
       contactName: "Anna Wiśniewska",
@@ -878,6 +912,11 @@ const wiadomosciBazowe: (Omit<InboxMessage, "attachments"> & {
     status: "processed",
     category: "inquiry",
     categoryManual: false,
+    classification: {
+      source: "heuristic", confidence: 1, threshold: null,
+      modelName: "Reguły lokalne", modelVersion: null, latencyMs: 0.9,
+      usedFallback: false, fallbackReason: null,
+    },
     extracted: {
       companyName: "PPHU Technoserwis",
       contactName: "Marek Zieliński",
@@ -910,6 +949,11 @@ const wiadomosciBazowe: (Omit<InboxMessage, "attachments"> & {
     status: "processed",
     category: "inquiry",
     categoryManual: false,
+    classification: {
+      source: "heuristic", confidence: 0.67, threshold: null,
+      modelName: "Reguły lokalne", modelVersion: null, latencyMs: 1.1,
+      usedFallback: false, fallbackReason: null,
+    },
     extracted: {
       companyName: "Zakład Mechaniczny Nowak",
       contactName: "Katarzyna Nowak",
@@ -939,6 +983,11 @@ const wiadomosciBazowe: (Omit<InboxMessage, "attachments"> & {
     status: "needs_review",
     category: "inquiry",
     categoryManual: false,
+    classification: {
+      source: "heuristic", confidence: 0.33, threshold: null,
+      modelName: "Reguły lokalne", modelVersion: null, latencyMs: 0.8,
+      usedFallback: false, fallbackReason: null,
+    },
     extracted: {
       companyName: null,
       contactName: "Piotr Adamczyk",
@@ -951,9 +1000,9 @@ const wiadomosciBazowe: (Omit<InboxMessage, "attachments"> & {
       deadline: null,
       attachments: [],
     },
-    crmRequestId: "r-7",
+    crmRequestId: null,
     duplicateOfId: null,
-    note: "Nie rozpoznano nazwy firmy ani specyfikacji — zapytanie utworzone, wymaga weryfikacji.",
+    note: null,
     fetchedAt: chwila(-4, 14),
   },
   {
@@ -968,6 +1017,11 @@ const wiadomosciBazowe: (Omit<InboxMessage, "attachments"> & {
     status: "skipped",
     category: "other",
     categoryManual: false,
+    classification: {
+      source: "heuristic", confidence: 1, threshold: null,
+      modelName: "Reguły lokalne", modelVersion: null, latencyMs: 0.7,
+      usedFallback: false, fallbackReason: null,
+    },
     extracted: null,
     crmRequestId: null,
     duplicateOfId: null,
@@ -1019,6 +1073,9 @@ const DODATKI: Record<
         kind: "custom",
         direction: "out",
         authorName: "Ewa Lis",
+        authorId: null,
+        cc: [],
+        readBy: [],
         contactId: "k-2-c1",
         to: "m.zielinski@technoserwis.com.pl",
         subject: "Oferta ZAP-2026-0002 — linia montażowa L2",
@@ -1033,6 +1090,9 @@ const DODATKI: Record<
         kind: "incoming",
         direction: "in",
         authorName: "Rafał Sikora",
+        authorId: null,
+        cc: [],
+        readBy: [],
         contactId: null,
         to: "Ewa Lis",
         subject: "Re: Oferta ZAP-2026-0002 — pytanie techniczne",
@@ -1064,6 +1124,9 @@ const DODATKI: Record<
         kind: "incoming",
         direction: "in",
         authorName: "Ewa Duda",
+        authorId: null,
+        cc: [],
+        readBy: [],
         contactId: null,
         to: "Jakub Kowalski",
         subject: "Re: ZAP-2026-0001 — dane do faktury",

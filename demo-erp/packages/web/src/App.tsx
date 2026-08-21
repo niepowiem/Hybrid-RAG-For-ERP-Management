@@ -10,11 +10,13 @@
  * field.*) — to zaczepy pod podświetlanie kroków przez asystenta.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { ROLE_LABELS, ROLES } from "@demo-erp/shared";
-import type { ApiErrorBody, Role } from "@demo-erp/shared";
-import { getRole, setRole } from "./api.js";
+import type { ApiErrorBody, CrmEmployee, Role } from "@demo-erp/shared";
+import { getRole, getUserId, setRole, setUserId } from "./api.js";
+import { crmApi } from "./crm/client.js";
+import { useMailbox } from "./crm/poller.js";
 import { StockPage } from "./pages/Stock.js";
 import { ProductsPage } from "./pages/Products.js";
 import { CounterpartiesPage } from "./pages/Counterparties.js";
@@ -154,8 +156,43 @@ const CRUMBS: Record<string, [string, string]> = {
 
 export default function App() {
   const [role, setRoleState] = useState<Role>(getRole());
+  const [userId, setUserIdState] = useState<string | null>(getUserId());
+  const [pracownicy, setPracownicy] = useState<CrmEmployee[]>([]);
+  const [noweZapytania, setNoweZapytania] = useState(0);
+  const mailbox = useMailbox();
   const { pathname } = useLocation();
+  const noweWiadomosci = mailbox.messages.filter(
+      (message) => message.status === "new" || message.status === "processing",
+  ).length;
+  const wiadomosciDoZatwierdzenia = mailbox.messages.filter(
+      (message) => message.category === "inquiry" && message.crmRequestId == null && message.status !== "skipped",
+  ).length;
+  const wiadomosciDoWeryfikacji = mailbox.messages.filter(
+      (message) => message.status === "needs_review" &&
+          !(message.category === "inquiry" && message.crmRequestId == null),
+  ).length;
 
+  useEffect(() => {
+    let aktywny = true;
+    void crmApi
+        .requests()
+        .then((requests) => {
+          if (aktywny) setNoweZapytania(requests.filter((request) => request.columnId === "col-new" && !request.seenAt).length);
+        })
+        .catch(() => undefined);
+    return () => {
+      aktywny = false;
+    };
+  }, [mailbox.messages, pathname]);
+
+  useEffect(() => {
+    // Lista pracowników potrzebna tylko do przełącznika „zalogowany jako”;
+    // brak odpowiedzi nie może wywrócić powłoki aplikacji.
+    void crmApi
+        .employees()
+        .then((e) => setPracownicy(e.filter((x) => x.active)))
+        .catch(() => undefined);
+  }, []);
   const crumb =
       CRUMBS[pathname] ??
       (pathname.startsWith("/documents/")
@@ -217,7 +254,39 @@ export default function App() {
                               data-assistant-id={item.id}
                           >
                             <span>{item.label}</span>
-                            {item.count && <span className="count">{item.count}</span>}
+                            {item.id === "nav.crm-board" ? (
+                                noweZapytania > 0 && (
+                                    <span className="nav-counts" aria-label="Nowe zapytania na tablicy">
+                                      <span className="count nav-count-new" title={`${noweZapytania} nowych zapytań`}>
+                                        {noweZapytania}
+                                      </span>
+                                    </span>
+                                )
+                            ) : item.id === "nav.crm-mailbox" ? (
+                                <span className="nav-counts" aria-label="Stan skrzynki zapytań">
+                                  {noweWiadomosci > 0 && (
+                                      <span className="count nav-count-new" title={`${noweWiadomosci} nowych wiadomości`}>
+                                        {noweWiadomosci}
+                                      </span>
+                                  )}
+                                  {wiadomosciDoWeryfikacji > 0 && (
+                                      <span
+                                          className="count nav-count-review"
+                                          title={`${wiadomosciDoWeryfikacji} wiadomości do weryfikacji`}
+                                      >
+                                        {wiadomosciDoWeryfikacji}
+                                      </span>
+                                  )}
+                                  {wiadomosciDoZatwierdzenia > 0 && (
+                                      <span
+                                          className="count nav-count-approval"
+                                          title={`${wiadomosciDoZatwierdzenia} zapytań do zatwierdzenia`}
+                                      >
+                                        {wiadomosciDoZatwierdzenia}
+                                      </span>
+                                  )}
+                                </span>
+                            ) : item.count ? <span className="count">{item.count}</span> : null}
                           </NavLink>
                       ) : (
                           <div
@@ -248,6 +317,28 @@ export default function App() {
                 {ROLES.map((r) => (
                     <option key={r} value={r}>
                       {ROLE_LABELS[r]}
+                    </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Zalogowany pracownik CRM: decyduje, z czyjego konta wychodzi
+              korespondencja i co w wątku jest „moje”. W wersji produkcyjnej
+              pochodziłby z sesji, tutaj jest przełącznikiem prototypu. */}
+            <div className="role-box">
+              <label htmlFor="crm-user">Zalogowany jako</label>
+              <select
+                  id="crm-user"
+                  data-assistant-id="field.crm-user"
+                  value={userId ?? ""}
+                  onChange={(e) => {
+                    setUserId(e.target.value);
+                    setUserIdState(e.target.value);
+                  }}
+              >
+                {pracownicy.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
                     </option>
                 ))}
               </select>

@@ -15,10 +15,15 @@
  */
 
 import { useState } from "react";
-import { wypelnijSzablon } from "@demo-erp/shared";
-import type { CrmMessage, CrmRequest } from "@demo-erp/shared";
+import {
+    ATTACHMENT_KIND_LABELS,
+    CRM_DATA_FIELD_LABELS,
+    ocenKompletnosc,
+    wypelnijSzablon,
+} from "@demo-erp/shared";
+import type { CrmEmployee, CrmIssue, CrmMessage, CrmRequest } from "@demo-erp/shared";
 import { notify } from "../ui.js";
-import { ApiError } from "../api.js";
+import { ApiError, getUserId } from "../api.js";
 import { crmApi } from "./client.js";
 import { Modal } from "./components.js";
 import { MessageEditor } from "./MessageEditor.js";
@@ -30,7 +35,11 @@ import { dataGodzinaPL, czasWzgledny } from "./format.js";
  * wypełniony, a interfejs musi wiedzieć, które fragmenty podstawił system —
  * przepuszczamy więc kontekst przez ten sam mechanizm co szablon.
  */
-export function podstawieniaDlaSprawy(req: CrmRequest, extra: Record<string, string | null> = {}): Podstawienie[] {
+export function podstawieniaDlaSprawy(
+    req: CrmRequest,
+    extra: Record<string, string | null> = {},
+): Podstawienie[] {
+    const kompletnosc = ocenKompletnosc(req);
     const ctx: Record<string, string | null> = {
         "klient.osoba": req.contactName,
         "klient.firma": req.companyName,
@@ -40,6 +49,14 @@ export function podstawieniaDlaSprawy(req: CrmRequest, extra: Record<string, str
         "sprawa.adres": req.siteAddress,
         produkty: req.products,
         ilosc: req.quantity,
+        // Braki wypisujemy tak samo jak szablon po stronie serwera, inaczej
+        // podświetlenie ominęłoby najważniejszy fragment prośby o uzupełnienie.
+        "braki.lista": kompletnosc.missingFields
+            .map((f) => `— ${CRM_DATA_FIELD_LABELS[f]}`)
+            .join("\n"),
+        "braki.zalaczniki": kompletnosc.missingAttachments
+            .map((a) => `— ${ATTACHMENT_KIND_LABELS[a]}`)
+            .join("\n"),
         ...extra,
     };
     const wzor = Object.keys(ctx)
@@ -53,37 +70,59 @@ export function SendMessageModal({
                                      messageId,
                                      title,
                                      intro,
+                                     introTone,
                                      poprzednia,
                                      onClose,
                                      onSent,
                                      extraActions,
+                                     externalBusy = false,
+                                     pracownicy = [],
+                                     firma = null,
                                  }: {
     req: CrmRequest;
     messageId: string;
     title: string;
     intro?: string;
+    introTone?: CrmIssue["severity"];
     /** Wcześniejsza wiadomość tego samego rodzaju — podstawa ostrzeżenia. */
     poprzednia?: CrmMessage | null;
     onClose: (r: CrmRequest | null) => void;
     onSent: (r: CrmRequest) => void;
     extraActions?: React.ReactNode;
+    /** Operacja rodzica (np. cofanie przeniesienia) blokuje wspólne akcje okna. */
+    externalBusy?: boolean;
+    /** Pracownicy i dane firmy — potrzebne do podświetlenia podstawień. */
+    pracownicy?: CrmEmployee[];
+    firma?: { name: string; email: string; phone: string; address: string } | null;
 }) {
     const msg = req.messages.find((m) => m.id === messageId);
     const [subject, setSubject] = useState(msg?.subject ?? "");
     const [body, setBody] = useState(msg?.body ?? "");
     const [to, setTo] = useState(msg?.to ?? req.email);
+    const [cc, setCc] = useState<string[]>(msg?.cc ?? []);
     const [busy, setBusy] = useState(false);
     const [pokazPoprzednia, setPokazPoprzednia] = useState(false);
 
-    const opiekun = req.assigneeId;
+    // Dane kosztorysanta i firmy podajemy jawnie: treść przychodzi z serwera już
+    // wypełniona, więc bez tych wartości podświetlenie ominęłoby nazwiska,
+    // adresy i telefony — czyli dokładnie to, co trzeba sprawdzić przed wysyłką.
+    const opiekun = pracownicy.find((e) => e.id === req.assigneeId);
+    const zalogowany = pracownicy.find((e) => e.id === getUserId());
     const podstawienia = podstawieniaDlaSprawy(req, {
-        "kosztorysant.imie": opiekun ? (msg?.authorName ?? null) : null,
+        "kosztorysant.imie": opiekun?.name ?? msg?.authorName ?? null,
+        "kosztorysant.email": opiekun?.email ?? null,
+        "kosztorysant.telefon": opiekun?.phone ?? null,
+        "firma.nazwa": firma?.name ?? null,
+        "firma.email": firma?.email ?? null,
+        "firma.telefon": firma?.phone ?? null,
+        "firma.adres": firma?.address ?? null,
     });
 
     async function wyslij(): Promise<void> {
+        if (externalBusy) return;
         setBusy(true);
         try {
-            const r = await crmApi.sendMessage(req.id, messageId, { subject, body });
+            const r = await crmApi.sendMessage(req.id, messageId, { to, cc, subject, body });
             notify("Wiadomość wysłana", `${to} · konto ${r.messages.at(-1)?.sentFrom ?? "skrzynka działu"}`);
             onSent(r);
         } catch (e) {
@@ -93,6 +132,7 @@ export function SendMessageModal({
     }
 
     async function odrzuc(): Promise<void> {
+        if (externalBusy) return;
         setBusy(true);
         try {
             onClose(await crmApi.discardMessage(req.id, messageId));
@@ -104,21 +144,29 @@ export function SendMessageModal({
     return (
         <Modal
             title={title}
+            wide
+            className="sm-modal"
             onClose={() => void odrzuc()}
             footer={
                 <>
                     {extraActions}
                     <span className="spacer" />
-                    <button onClick={() => void odrzuc()} disabled={busy}>
+                    <button onClick={() => void odrzuc()} disabled={busy || externalBusy}>
                         Nie wysyłaj
                     </button>
-                    <button className="primary" onClick={() => void wyslij()} disabled={busy}>
+                    <button className="primary" onClick={() => void wyslij()} disabled={busy || externalBusy}>
                         {busy ? "Wysyłanie…" : "Wyślij"}
                     </button>
                 </>
             }
         >
-            {intro && <p className="crm-note">{intro}</p>}
+            <div className="sm-compose">
+            {intro && (
+                <p className={`sm-intro ${introTone ?? "neutral"}`}>
+                    <span className="sm-intro-ico" aria-hidden="true">!</span>
+                    <span>{intro}</span>
+                </p>
+            )}
 
             {poprzednia && (
                 <div className="dr-alert warn sm-alert">
@@ -165,15 +213,20 @@ export function SendMessageModal({
             )}
 
             <MessageEditor
+                zTrybami
+                pokazLegende={false}
                 to={to}
+                cc={cc}
                 subject={subject}
                 body={body}
                 podstawienia={podstawienia}
-                account={msg?.sentFrom ?? undefined}
+                account={zalogowany?.email ?? msg?.sentFrom ?? undefined}
                 onToChange={setTo}
+                onCcChange={setCc}
                 onSubjectChange={setSubject}
                 onBodyChange={setBody}
             />
+            </div>
         </Modal>
     );
 }

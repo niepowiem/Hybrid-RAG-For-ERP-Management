@@ -1,3 +1,4 @@
+import "./load-env.js";
 import Fastify from "fastify";
 import { registerRoutes } from "./routes.js";
 

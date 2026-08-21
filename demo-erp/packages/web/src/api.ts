@@ -43,6 +43,29 @@ export const setRole = (r: Role): void => {
 };
 
 /**
+ * Zalogowany pracownik CRM. W prototypie wybierany ręcznie w nagłówku strony
+ * (przełącznik „zalogowany jako”), w wersji produkcyjnej pochodziłby z sesji.
+ * Trafia do API nagłówkiem `x-user-id` i decyduje, z czyjego konta wychodzi
+ * korespondencja oraz co jest „moją” wiadomością w wątku.
+ */
+let currentUserId: string | null = (() => {
+  try {
+    return window.localStorage.getItem("crm.userId") ?? "e-2";
+  } catch {
+    return "e-2";
+  }
+})();
+export const getUserId = (): string | null => currentUserId;
+export const setUserId = (id: string | null): void => {
+  currentUserId = id;
+  try {
+    if (id) window.localStorage.setItem("crm.userId", id);
+  } catch {
+    // Brak zapisu preferencji nie jest błędem wartym pokazywania.
+  }
+};
+
+/**
  * Eksportowana jako apiRequest — moduły z własnym klientem (np. CRM) mają
  * korzystać z tej samej obsługi nagłówków, roli i kontraktu błędów zamiast
  * pisać drugie, rozjeżdżające się fetchowanie.
@@ -52,6 +75,7 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // Zapowiedź JSON-a przy pustym ciele to dla Fastify błąd protokołu.
   const headers: Record<string, string> = {
     "x-user-role": currentRole,
+    ...(currentUserId ? { "x-user-id": currentUserId } : {}),
     ...(init?.headers as Record<string, string> | undefined),
   };
   if (init?.body != null) headers["content-type"] = "application/json";
@@ -85,57 +109,57 @@ export const api = {
   documents: () => request<Document[]>("/api/documents"),
   document: (id: string) => request<Document>(`/api/documents/${id}`),
   createDocument: (input: CreateDocumentInput) =>
-    request<Document>("/api/documents", { method: "POST", body: JSON.stringify(input) }),
+      request<Document>("/api/documents", { method: "POST", body: JSON.stringify(input) }),
   updateDocument: (id: string, input: CreateDocumentInput) =>
-    request<Document>(`/api/documents/${id}`, { method: "PUT", body: JSON.stringify(input) }),
+      request<Document>(`/api/documents/${id}`, { method: "PUT", body: JSON.stringify(input) }),
   confirmDocument: (id: string) =>
-    request<Document>(`/api/documents/${id}/confirm`, { method: "POST" }),
+      request<Document>(`/api/documents/${id}/confirm`, { method: "POST" }),
 
   // Lokalizacje
   locations: () => request<StorageLocation[]>("/api/locations"),
   createLocation: (input: CreateLocationInput) =>
-    request<StorageLocation>("/api/locations", { method: "POST", body: JSON.stringify(input) }),
+      request<StorageLocation>("/api/locations", { method: "POST", body: JSON.stringify(input) }),
   toggleLocation: (id: string) =>
-    request<StorageLocation>(`/api/locations/${id}/toggle`, { method: "POST" }),
+      request<StorageLocation>(`/api/locations/${id}/toggle`, { method: "POST" }),
 
   // Inwentaryzacja
   stocktakes: () => request<Stocktake[]>("/api/stocktakes"),
   stocktake: (id: string) => request<Stocktake>(`/api/stocktakes/${id}`),
   createStocktake: (warehouseId: string) =>
-    request<Stocktake>("/api/stocktakes", { method: "POST", body: JSON.stringify({ warehouseId }) }),
+      request<Stocktake>("/api/stocktakes", { method: "POST", body: JSON.stringify({ warehouseId }) }),
   countStocktake: (id: string, productId: string, counted: number) =>
-    request<Stocktake>(`/api/stocktakes/${id}/count`, {
-      method: "POST",
-      body: JSON.stringify({ productId, counted }),
-    }),
+      request<Stocktake>(`/api/stocktakes/${id}/count`, {
+        method: "POST",
+        body: JSON.stringify({ productId, counted }),
+      }),
   closeStocktake: (id: string) =>
-    request<Stocktake>(`/api/stocktakes/${id}/close`, { method: "POST" }),
+      request<Stocktake>(`/api/stocktakes/${id}/close`, { method: "POST" }),
 
   // Zamówienia zakupu
   purchaseOrders: () => request<PurchaseOrder[]>("/api/purchase-orders"),
   purchaseOrder: (id: string) => request<PurchaseOrder>(`/api/purchase-orders/${id}`),
   createPurchaseOrder: (input: CreatePurchaseOrderInput) =>
-    request<PurchaseOrder>("/api/purchase-orders", { method: "POST", body: JSON.stringify(input) }),
+      request<PurchaseOrder>("/api/purchase-orders", { method: "POST", body: JSON.stringify(input) }),
   sendPurchaseOrder: (id: string) =>
-    request<PurchaseOrder>(`/api/purchase-orders/${id}/send`, { method: "POST" }),
+      request<PurchaseOrder>(`/api/purchase-orders/${id}/send`, { method: "POST" }),
   receivePurchaseOrder: (id: string) =>
-    request<PurchaseOrder>(`/api/purchase-orders/${id}/receive`, { method: "POST" }),
+      request<PurchaseOrder>(`/api/purchase-orders/${id}/receive`, { method: "POST" }),
 
   // Zamówienia sprzedaży
   salesOrders: () => request<SalesOrder[]>("/api/sales-orders"),
   salesOrder: (id: string) => request<SalesOrder>(`/api/sales-orders/${id}`),
   createSalesOrder: (input: CreateSalesOrderInput) =>
-    request<SalesOrder>("/api/sales-orders", { method: "POST", body: JSON.stringify(input) }),
+      request<SalesOrder>("/api/sales-orders", { method: "POST", body: JSON.stringify(input) }),
   confirmSalesOrder: (id: string) =>
-    request<SalesOrder>(`/api/sales-orders/${id}/confirm`, { method: "POST" }),
+      request<SalesOrder>(`/api/sales-orders/${id}/confirm`, { method: "POST" }),
   fulfilSalesOrder: (id: string) =>
-    request<SalesOrder>(`/api/sales-orders/${id}/fulfil`, { method: "POST" }),
+      request<SalesOrder>(`/api/sales-orders/${id}/fulfil`, { method: "POST" }),
 
   // Faktury zakupu
   purchaseInvoices: () => request<PurchaseInvoice[]>("/api/purchase-invoices"),
   purchaseInvoice: (id: string) => request<PurchaseInvoice>(`/api/purchase-invoices/${id}`),
   createPurchaseInvoice: (input: CreatePurchaseInvoiceInput) =>
-    request<PurchaseInvoice>("/api/purchase-invoices", { method: "POST", body: JSON.stringify(input) }),
+      request<PurchaseInvoice>("/api/purchase-invoices", { method: "POST", body: JSON.stringify(input) }),
   bookPurchaseInvoice: (id: string) =>
-    request<PurchaseInvoice>(`/api/purchase-invoices/${id}/book`, { method: "POST" }),
+      request<PurchaseInvoice>(`/api/purchase-invoices/${id}/book`, { method: "POST" }),
 };

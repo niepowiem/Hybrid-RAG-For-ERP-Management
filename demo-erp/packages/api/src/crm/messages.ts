@@ -76,6 +76,7 @@ export function zSzablonu(
     opcje: {
       kind?: CrmMessageKind;
       authorName?: string;
+      authorId?: string;
       to?: string;
       ctx?: Record<string, string | null>;
     } = {},
@@ -87,7 +88,10 @@ export function zSzablonu(
     kind: opcje.kind ?? "custom",
     direction: "out",
     authorName: opcje.authorName ?? crmSettings.mailbox.displayName,
+    authorId: opcje.authorId ?? null,
     contactId: null,
+    cc: [],
+    readBy: [],
     to: opcje.to ?? req.email,
     subject: wypelnijSzablon(tpl.subject, ctx).text,
     body: wypelnijSzablon(tpl.body, ctx).text,
@@ -117,6 +121,7 @@ export const generujInformacjeOOpiekunie = (req: CrmRequest, pracownik: CrmEmplo
     zSzablonu("assignment", req, {
       kind: "assignment",
       authorName: pracownik.name,
+      authorId: pracownik.id,
       ctx: kontekstPracownika(pracownik),
     });
 

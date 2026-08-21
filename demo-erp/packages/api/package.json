@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:dgx-contract": "tsx --test src/crm/ai-gateway.test.ts",
+    "test:ollama-extractor": "tsx --test src/crm/ollama-extractor.test.ts"
   },
   "dependencies": {
     "@demo-erp/shared": "*",

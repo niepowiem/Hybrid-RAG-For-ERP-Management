@@ -35,6 +35,7 @@ export const crmSettings: CrmSettings = {
         address: "ul. Zakaszewskiego 7, 66-300 Międzyrzecz",
     },
     automation: {
+        mailClassificationMode: "automatic",
         acknowledgeNewRequests: true,
         followUpAfterDays: 7,
         autoSendFollowUp: true,

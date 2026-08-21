@@ -2,14 +2,17 @@
  * classify.ts — klasyfikacja pobranej wiadomości.
  *
  * Dwie kategorie: „Zapytanie ofertowe” albo „Pozostała wiadomość”.
- * W wersji demonstracyjnej decyduje prosty licznik słów kluczowych — jawny,
- * powtarzalny i możliwy do wytłumaczenia użytkownikowi. To miejsce jest
- * przygotowane pod podmianę na model językowy: sygnatura funkcji przyjmuje
- * temat i treść, a zwraca kategorię wraz z uzasadnieniem, więc panel
- * wiadomości nie zmieni się ani o linijkę.
+ * Podstawową decyzję podejmuje binarny klasyfikator stacking na DGX Spark.
+ * Reguły lokalne są wyłącznie diagnostycznym fallbackiem: ich użycie zawsze
+ * kieruje wiadomość do ręcznej weryfikacji.
  */
 
 import type { MailCategory } from "@demo-erp/shared";
+import {
+  classifyWithDgx,
+  DgxClassifierError,
+  isDgxClassifierConfigured,
+} from "./ai-gateway.js";
 
 export interface ClassificationResult {
   category: MailCategory;
@@ -17,6 +20,13 @@ export interface ClassificationResult {
   confidence: number;
   /** Trafione przesłanki — pokazywane w szczegółach wiadomości. */
   reasons: string[];
+  source: "dgx" | "heuristic";
+  threshold: number | null;
+  modelName: string | null;
+  modelVersion: string | null;
+  latencyMs: number;
+  usedFallback: boolean;
+  fallbackReason: string | null;
 }
 
 /** Frazy przemawiające za zapytaniem ofertowym; waga w drugim polu. */
@@ -59,7 +69,8 @@ const PRZECIW: [string, number][] = [
 
 const norm = (s: string): string => s.toLowerCase();
 
-export function classifyMail(subject: string, body: string): ClassificationResult {
+export function classifyMailHeuristic(subject: string, body: string): ClassificationResult {
+  const started = performance.now();
   // Temat waży podwójnie: to on niesie intencję nadawcy.
   const t = norm(subject);
   const b = norm(body);
@@ -87,5 +98,64 @@ export function classifyMail(subject: string, body: string): ClassificationResul
   const category: MailCategory = punkty >= 4 ? "inquiry" : "other";
   const confidence = Math.min(1, Math.abs(punkty) / 12);
 
-  return { category, confidence, reasons: reasons.slice(0, 5) };
+  return {
+    category,
+    confidence,
+    reasons: reasons.slice(0, 5),
+    source: "heuristic",
+    threshold: null,
+    modelName: "Reguły lokalne",
+    modelVersion: null,
+    latencyMs: performance.now() - started,
+    usedFallback: false,
+    fallbackReason: null,
+  };
+}
+
+/**
+ * Pierwszy etap pipeline'u: model stacking na DGX, z regułami jako
+ * bezpiecznym fallbackiem. Awaria DGX nie zatrzymuje pobierania poczty, ale
+ * wynik jest jawnie oznaczony i status połączenia pozostaje widoczny w UI.
+ */
+export async function classifyMail(
+    subject: string,
+    body: string,
+    context: { messageId: string; attachments: string[] },
+): Promise<ClassificationResult> {
+  if (!isDgxClassifierConfigured()) {
+    const fallback = classifyMailHeuristic(subject, body);
+    const fallbackReason = "Klasyfikator AI nie jest skonfigurowany.";
+    return {
+      ...fallback,
+      reasons: [fallbackReason, ...fallback.reasons].slice(0, 5),
+      usedFallback: true,
+      fallbackReason,
+    };
+  }
+  try {
+    const result = await classifyWithDgx({ subject, body, ...context });
+    return {
+      category: result.category,
+      confidence: result.confidence,
+      reasons: [`model ${result.modelVersion}`],
+      source: "dgx",
+      threshold: result.threshold,
+      modelName: result.modelName,
+      modelVersion: result.modelVersion,
+      latencyMs: result.latencyMs,
+      usedFallback: false,
+      fallbackReason: null,
+    };
+  } catch (error) {
+    const fallback = classifyMailHeuristic(subject, body);
+    const fallbackReason = error instanceof DgxClassifierError
+        ? error.message
+        : "Klasyfikator DGX zwrócił nieoczekiwany błąd.";
+    return {
+      ...fallback,
+      reasons: [fallbackReason, ...fallback.reasons].slice(0, 5),
+      usedFallback: true,
+      fallbackReason,
+    };
+  }
 }
